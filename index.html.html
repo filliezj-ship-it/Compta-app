@@ -1,0 +1,1827 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Johann Filliez — Compta</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Johann Filliez">
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' fill='%231F2A37'/%3E%3Ctext x='90' y='112' font-family='Georgia,serif' font-size='68' font-weight='700' fill='%23B08D57' text-anchor='middle'%3EJF%3C/text%3E%3C/svg%3E">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root{
+    --navy:#1F2A37; --navy-light:#2C3A4B; --gold:#B08D57; --gold-light:#F3ECDD;
+    --cream:#FAF8F4; --grey:#6B7280; --grey-line:#E5E1D8; --red:#B3413A; --green:#3D7A54;
+    --safe-b: env(safe-area-inset-bottom, 0px); --safe-t: env(safe-area-inset-top, 0px);
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html{overflow-x:hidden; width:100%;}
+  html,body{margin:0; padding:0; background:var(--cream); color:var(--navy);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    overscroll-behavior-y:none; overscroll-behavior-x:none;
+    overflow-x:hidden; width:100%; max-width:100vw;}
+  #app{max-width:560px; margin:0 auto; min-height:100vh; padding-bottom:calc(74px + var(--safe-b));
+    overflow-x:hidden; width:100%;}
+
+  header.topbar{
+    background:var(--navy); color:#fff; padding:calc(16px + var(--safe-t)) 20px 16px;
+    position:sticky; top:0; z-index:10; display:flex; align-items:center; justify-content:space-between;
+  }
+  header.topbar .brand{font-family:Georgia,'Times New Roman',serif; font-size:20px; font-weight:700; color:var(--gold); letter-spacing:.3px;}
+  header.topbar .sub{font-size:11px; color:#C9CCD1; margin-top:2px;}
+  header.topbar .year-pill{
+    background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.18); color:#fff;
+    font-size:14px; font-weight:600; padding:6px 12px; border-radius:20px;
+  }
+
+  main{padding:16px;}
+  .screen{display:none;}
+  .screen.active{display:block; animation:fadein .18s ease;}
+  @keyframes fadein{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:translateY(0);}}
+
+  h2.section-title{font-size:13px; text-transform:uppercase; letter-spacing:.06em; color:var(--grey); margin:22px 0 10px; font-weight:700;}
+  h2.section-title:first-child{margin-top:0;}
+
+  .card{background:#fff; border:1px solid var(--grey-line); border-radius:14px; padding:16px; margin-bottom:10px;}
+  .kpi-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .kpi{background:#fff; border:1px solid var(--grey-line); border-radius:14px; padding:14px;}
+  .kpi .val{font-size:22px; font-weight:700; color:var(--navy);}
+  .kpi .label{font-size:11px; color:var(--grey); margin-top:2px;}
+  .kpi.gold{background:var(--navy); border-color:var(--navy);}
+  .kpi.gold .val{color:var(--gold);}
+  .kpi.gold .label{color:#C9CCD1;}
+
+  .quick-actions{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-top:14px;}
+  .qa-btn{background:#fff; border:1px solid var(--grey-line); border-radius:12px; padding:14px 6px;
+    text-align:center; font-size:12px; font-weight:600; color:var(--navy); cursor:pointer;}
+  .qa-btn .ic{font-size:20px; display:block; margin-bottom:4px;}
+  .qa-btn:active{background:var(--gold-light);}
+
+  .list-item{background:#fff; border:1px solid var(--grey-line); border-radius:14px; padding:14px; margin-bottom:8px; cursor:pointer;}
+  .list-item:active{background:#F7F5F0;}
+  .li-top{display:flex; justify-content:space-between; align-items:flex-start; gap:8px;}
+  .li-title{font-weight:700; font-size:15px; color:var(--navy);}
+  .li-sub{font-size:12.5px; color:var(--grey); margin-top:2px;}
+  .li-amount{font-weight:700; font-size:15px; color:var(--navy); white-space:nowrap;}
+  .badge{display:inline-block; font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:20px; margin-top:6px;}
+  .badge.paid{background:#E4F3E8; color:var(--green);}
+  .badge.pending{background:#FBF0DD; color:var(--gold);}
+  .badge.cancelled{background:#F5E4E2; color:var(--red);}
+  .badge.draft{background:#EDEDED; color:#6B7280;}
+  .badge.confirmed{background:#E1EAF5; color:#2E5C9E;}
+  .badge.done{background:#DCF3EE; color:#0F7A63;}
+  .badge.invoiced{background:#EAE3F5; color:#5B3E9E;}
+  .badge.postponed{background:#FCEBD9; color:#B0631F;}
+  .qa-inline{display:inline-block; margin-top:8px; margin-left:6px; padding:6px 12px; border-radius:20px;
+    background:var(--navy); color:var(--gold); font-size:11.5px; font-weight:700; border:none; cursor:pointer;}
+  .qa-inline.secondary{background:var(--gold-light); color:var(--navy); border:1px solid var(--gold);}
+
+  .empty-state{text-align:center; padding:50px 20px; color:var(--grey);}
+  .empty-state .ic{font-size:38px; margin-bottom:10px;}
+  .empty-state .txt{font-size:14px; line-height:1.5;}
+
+  nav.tabbar{
+    position:fixed; bottom:0; left:0; right:0; background:rgba(255,255,255,.96); backdrop-filter:blur(10px);
+    border-top:1px solid var(--grey-line); display:flex; padding-bottom:var(--safe-b); z-index:20;
+    max-width:560px; margin:0 auto; overflow-x:auto; -webkit-overflow-scrolling:touch;
+  }
+  nav.tabbar .tab{flex:0 0 auto; min-width:66px; text-align:center; padding:10px 4px 8px; font-size:9.5px; color:var(--grey);
+    cursor:pointer; font-weight:600;}
+  nav.tabbar .tab .ic{font-size:18px; display:block; margin-bottom:2px;}
+  nav.tabbar .tab.active{color:var(--navy);}
+  nav.tabbar .tab.active .ic{color:var(--gold);}
+
+  .fab{
+    position:fixed; right:20px; bottom:calc(84px + var(--safe-b)); max-width:560px;
+    width:56px; height:56px; border-radius:50%; background:var(--navy); color:var(--gold);
+    font-size:28px; display:flex; align-items:center; justify-content:center; border:none;
+    box-shadow:0 6px 16px rgba(31,42,55,.35); z-index:15; cursor:pointer;
+  }
+  .fab:active{transform:scale(.94);}
+
+  /* Modal / sheet */
+  .sheet-overlay{position:fixed; inset:0; background:rgba(20,24,30,.5); z-index:30; display:none;}
+  .sheet-overlay.active{display:block;}
+  .sheet{
+    position:fixed; left:0; right:0; bottom:0; max-width:560px; margin:0 auto;
+    background:var(--cream); border-radius:20px 20px 0 0; max-height:92vh; overflow-y:auto;
+    padding:18px 18px calc(24px + var(--safe-b)); transform:translateY(100%); transition:transform .25s ease; z-index:31;
+  }
+  .sheet-overlay.active .sheet{transform:translateY(0);}
+  .sheet-handle{width:36px; height:4px; background:var(--grey-line); border-radius:3px; margin:0 auto 14px;}
+  .sheet h3{margin:0 0 16px; font-size:18px; color:var(--navy);}
+
+  label{display:block; font-size:12.5px; font-weight:700; color:var(--grey); margin:12px 0 5px;}
+  label:first-of-type{margin-top:0;}
+  input[type=text], input[type=number], input[type=date], input[type=email], input[type=tel], input[type=file], select, textarea{
+    width:100%; padding:11px 12px; border:1px solid var(--grey-line); border-radius:10px; font-size:15px;
+    background:#fff; color:var(--navy); font-family:inherit; max-width:100%;
+  }
+  textarea{resize:vertical; min-height:60px;}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:10px;}
+  .row3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px;}
+
+  .btn{display:block; width:100%; text-align:center; padding:13px; border-radius:12px; font-size:15px;
+    font-weight:700; border:none; cursor:pointer; margin-top:18px;}
+  .btn-primary{background:var(--navy); color:var(--gold);}
+  .btn-primary:active{opacity:.85;}
+  .btn-secondary{background:#fff; color:var(--navy); border:1px solid var(--grey-line);}
+  .btn-danger{background:#fff; color:var(--red); border:1px solid #EBCFCB; margin-top:8px;}
+  .btn-photo{background:var(--gold-light); color:var(--navy); border:1px dashed var(--gold); margin-top:8px;}
+
+  .helper{font-size:11.5px; color:var(--grey); margin-top:4px; line-height:1.4;}
+  .calc-readout{background:var(--gold-light); border:1px solid var(--gold); border-radius:10px; padding:10px 12px; margin-top:12px;}
+  .calc-readout .row{display:flex; justify-content:space-between; font-size:13px; padding:2px 0;}
+  .calc-readout .row.total{font-weight:700; font-size:15px; border-top:1px solid var(--gold); margin-top:6px; padding-top:6px;}
+
+  .receipt-grid{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px;}
+  .receipt-thumb{position:relative; border-radius:12px; overflow:hidden; aspect-ratio:1; background:#fff; border:1px solid var(--grey-line);}
+  .receipt-thumb img{width:100%; height:100%; object-fit:cover; display:block;}
+  .receipt-thumb .num{position:absolute; bottom:0; left:0; right:0; background:rgba(31,42,55,.85); color:var(--gold);
+    font-size:9.5px; font-weight:700; padding:3px 5px; text-align:center;}
+
+  .toast{position:fixed; left:50%; bottom:calc(90px + var(--safe-b)); transform:translateX(-50%);
+    background:var(--navy); color:#fff; padding:10px 18px; border-radius:24px; font-size:13px; z-index:50;
+    opacity:0; pointer-events:none; transition:opacity .2s;}
+  .toast.show{opacity:1;}
+
+  .search-box{margin-bottom:12px;}
+  .search-box input{width:100%; padding:11px 14px; border-radius:24px; border:1px solid var(--grey-line); font-size:14px; background:#fff;}
+
+  .top-nav-btn{background:none; border:none; color:#fff; font-size:14px; cursor:pointer; padding:4px 0;}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div>
+      <div class="brand">Johann Filliez</div>
+      <div class="sub">Comptabilité de guide</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div class="year-pill" id="yearPill" onclick="cyclerYear()">2026</div>
+      <button onclick="openReglagesForm()" style="background:none; border:none; color:#fff; font-size:20px; padding:4px; cursor:pointer;">⚙️</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- DASHBOARD -->
+    <section class="screen active" id="screen-dashboard">
+      <h2 class="section-title">Cette année</h2>
+      <div class="kpi-grid">
+        <div class="kpi gold"><div class="val" id="kpiCA">— CHF</div><div class="label">Chiffre d'affaires</div></div>
+        <div class="kpi"><div class="val" id="kpiCourses">—</div><div class="label">Courses</div></div>
+        <div class="kpi"><div class="val" id="kpiBenef">— CHF</div><div class="label">Bénéfice net estimé</div></div>
+        <div class="kpi"><div class="val" id="kpiJust">—</div><div class="label">Justificatifs</div></div>
+      </div>
+      <div class="quick-actions">
+        <div class="qa-btn" onclick="openCourseForm()"><span class="ic">🏔️</span>Course</div>
+        <div class="qa-btn" onclick="openDepenseForm()"><span class="ic">🧾</span>Dépense</div>
+        <div class="qa-btn" onclick="openJustificatifForm()"><span class="ic">📷</span>Justificatif</div>
+      </div>
+
+      <h2 class="section-title" id="encaissementsTitle">Encaissements</h2>
+      <div class="card" id="encaissementsCard"></div>
+
+      <h2 class="section-title">Budget de la saison</h2>
+      <div class="card" id="budgetCard"></div>
+
+      <h2 class="section-title">Prochaines courses</h2>
+      <div id="dashRecentCourses"></div>
+    </section>
+
+    <!-- AGENDA -->
+    <section class="screen" id="screen-agenda">
+      <h2 class="section-title">Agenda des courses</h2>
+      <div id="agendaList"></div>
+    </section>
+
+    <!-- CLIENTS -->
+    <section class="screen" id="screen-clients">
+      <div class="search-box"><input type="text" placeholder="Rechercher un client…" oninput="renderClients(this.value)"></div>
+      <div id="clientsList"></div>
+    </section>
+
+    <!-- DEPENSES -->
+    <section class="screen" id="screen-depenses">
+      <h2 class="section-title">Dépenses professionnelles</h2>
+      <div id="depensesList"></div>
+    </section>
+
+    <!-- JUSTIFICATIFS -->
+    <section class="screen" id="screen-justificatifs">
+      <h2 class="section-title">Justificatifs de l'année</h2>
+      <button class="btn btn-secondary" style="margin-top:0;" onclick="exportJustificatifsPDF()">📄 Générer le PDF de l'année</button>
+      <div id="justCount" class="helper" style="text-align:center; margin-top:8px;"></div>
+      <h2 class="section-title">Tous les justificatifs</h2>
+      <div id="justGridWrap"><div class="receipt-grid" id="justGrid"></div></div>
+    </section>
+
+    <!-- FACTURES -->
+    <section class="screen" id="screen-factures">
+      <h2 class="section-title">Factures</h2>
+      <div id="facturesList"></div>
+    </section>
+
+    <!-- CAISSE -->
+    <section class="screen" id="screen-caisse">
+      <h2 class="section-title">Solde de caisse</h2>
+      <div class="card" id="caisseSolde" style="text-align:center;">
+        <div style="font-size:28px; font-weight:700; color:var(--navy);" id="caisseSoldeVal">— CHF</div>
+        <div class="helper" style="text-align:center;">Espèces physiquement en votre possession</div>
+      </div>
+      <h2 class="section-title">Mouvements</h2>
+      <div id="caisseList"></div>
+    </section>
+  </main>
+
+  <button class="fab" id="fabBtn" onclick="fabAction()">+</button>
+
+  <nav class="tabbar">
+    <div class="tab active" data-screen="dashboard" onclick="switchScreen('dashboard')"><span class="ic">🏠</span>Accueil</div>
+    <div class="tab" data-screen="agenda" onclick="switchScreen('agenda')"><span class="ic">📅</span>Agenda</div>
+    <div class="tab" data-screen="clients" onclick="switchScreen('clients')"><span class="ic">👤</span>Clients</div>
+    <div class="tab" data-screen="factures" onclick="switchScreen('factures')"><span class="ic">📄</span>Factures</div>
+    <div class="tab" data-screen="depenses" onclick="switchScreen('depenses')"><span class="ic">🧾</span>Dépenses</div>
+    <div class="tab" data-screen="caisse" onclick="switchScreen('caisse')"><span class="ic">🪙</span>Caisse</div>
+    <div class="tab" data-screen="justificatifs" onclick="switchScreen('justificatifs')"><span class="ic">📷</span>Justif.</div>
+  </nav>
+</div>
+
+<div class="sheet-overlay" id="sheetOverlay" onclick="if(event.target===this) closeSheet()">
+  <div class="sheet" id="sheetContent"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div id="loadingOverlay" style="position:fixed; inset:0; background:var(--cream); z-index:100; display:flex; flex-direction:column; align-items:center; justify-content:center;">
+  <div style="font-family:Georgia,serif; font-size:22px; font-weight:700; color:var(--navy); margin-bottom:8px;">Johann Filliez</div>
+  <div style="font-size:13px; color:var(--grey);">Chargement de vos données…</div>
+</div>
+
+<script>
+/* ---- Filet de sécurité, placé avant tout le reste : si quoi que ce soit
+   empêche l'appli de démarrer (erreur JS, environnement restreint), affiche
+   un message clair au lieu de rester bloqué sur l'écran de chargement. ---- */
+window.__bootWatchdog = setTimeout(function(){
+  var overlay = document.getElementById('loadingOverlay');
+  if(overlay){
+    overlay.innerHTML =
+      '<div style="font-family:Georgia,serif;font-size:20px;font-weight:700;color:#1F2A37;margin-bottom:12px;">Johann Filliez</div>' +
+      '<div style="font-size:14px;color:#B3413A;max-width:300px;text-align:center;line-height:1.6;padding:0 24px;">' +
+      "⚠ L'application ne démarre pas dans cet environnement.<br><br>" +
+      "Essayez de l'ouvrir dans un onglet Safari normal (pas un aperçu de fichier ou une prévisualisation)." +
+      '</div>';
+  }
+}, 4000);
+window.addEventListener('error', function(e){
+  clearTimeout(window.__bootWatchdog);
+  var overlay = document.getElementById('loadingOverlay');
+  if(overlay){
+    overlay.innerHTML =
+      '<div style="font-family:Georgia,serif;font-size:20px;font-weight:700;color:#1F2A37;margin-bottom:12px;">Johann Filliez</div>' +
+      '<div style="font-size:13px;color:#B3413A;max-width:300px;text-align:center;line-height:1.6;padding:0 24px;">' +
+      "⚠ Erreur technique au démarrage :<br>" + (e && e.message ? e.message : 'inconnue') +
+      "<br><br>Faites une capture d'écran de ce message pour obtenir de l'aide." +
+      '</div>';
+  }
+});
+
+/* ============================= DATA LAYER ============================= */
+const K_CLIENTS = 'jf_clients';
+const K_COURSES = 'jf_courses';
+const K_DEPENSES = 'jf_depenses';
+const K_FACTURES = 'jf_factures';
+const K_JUST_INDEX = 'jf_justificatifs_index';
+const K_CAISSE = 'jf_caisse_mouvements';
+const K_SETTINGS = 'jf_settings';
+let settings = {
+  nom: 'Johann Filliez',
+  titre: 'Guide de montagne UIAGM',
+  rue: '',
+  npa: '',
+  ville: '',
+  pays: 'CH',
+  iban: '',
+  tvaMention: 'Non assujetti à la TVA (art. 10 LTVA)',
+  conditions: 'Paiement à 30 jours, par virement bancaire.',
+};
+let caisseMouvements = []; // mouvements manuels uniquement (dépôts, retraits, solde initial)
+
+let clients = [];
+let courses = [];
+let depenses = [];
+let factures = [];
+let justificatifs = []; // full objects incl. image, loaded lazily per screen
+let currentYear = new Date().getFullYear();
+
+const DEPENSES_CATEGORIES = [
+  "Matériel technique","Vêtements techniques professionnels","Véhicule — Leasing",
+  "Véhicule — Garage/Entretien","Véhicule — Assurance","Véhicule — Essence (estimée)",
+  "Téléphone/Internet (part pro)","Assurances professionnelles (RC pro/perte de gain)",
+  "Cotisations ASGM/UIAGM","Formation continue","Marketing/Site web/Représentation",
+  "Bureau/Administratif","Logiciels professionnels (SaaS)","Comptabilité/Fiduciaire",
+  "Location de matériel (non refacturée client)","Frais de course (remontées/permis/hébergement)","Autre"
+];
+const ACTIVITES = ["Ski de randonnée","Alpinisme","Escalade","Cascade de glace","Expédition","Trek","Formation/Cours","Via ferrata","Autre"];
+
+/* Cycle de vie d'une course, dans l'ordre chronologique.
+   Un seul champ statut suit toute la vie de la réservation :
+   Demande -> Confirmée -> Effectuée -> Facturée -> Payée
+   avec Reportée / Annulée comme sorties possibles à tout moment. */
+const STATUTS = ["Demande","Confirmée","Effectuée","Facturée","Payée","Reportée","Annulée"];
+const STATUT_BADGE = {
+  "Demande":"draft", "Confirmée":"confirmed", "Effectuée":"done",
+  "Facturée":"invoiced", "Payée":"paid", "Reportée":"postponed", "Annulée":"cancelled",
+};
+function isLiveStatut(s){ return s!=='Annulée'; } // compte dans le CA / éligible à facturer
+
+/* ---- Stockage 100% local (IndexedDB) — rien n'est envoyé sur un serveur ----
+   Toutes vos données (clients, courses, dépenses, factures, photos de
+   justificatifs) restent uniquement dans le navigateur de cet iPhone, dans
+   une base nommée "JohannFillizComptaDB". Aucune connexion internet requise
+   pour les enregistrer ou les consulter. */
+const IDB_NAME = 'JohannFillizComptaDB';
+const IDB_STORE = 'kv';
+let _idbPromise = null;
+function idbOpen(){
+  if(_idbPromise) return _idbPromise;
+  _idbPromise = new Promise((resolve, reject) => {
+    if(!window.indexedDB){ reject(new Error('IndexedDB indisponible sur ce navigateur')); return; }
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore(IDB_STORE, {keyPath:'key'}); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return _idbPromise;
+}
+async function idbGet(key){
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readonly');
+    const req = tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess = () => resolve(req.result ? req.result.value : undefined);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function idbSet(key, value){
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put({key, value});
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function loadJSON(key, fallback){
+  try{
+    const raw = await idbGet(key);
+    return raw ? JSON.parse(raw) : fallback;
+  }catch(e){ console.error('Lecture impossible', key, e); return fallback; }
+}
+async function saveJSON(key, value){
+  try{
+    await idbSet(key, JSON.stringify(value));
+    return true;
+  }catch(e){
+    console.error('Storage error', e);
+    showToast("⚠ Échec de l'enregistrement sur cet appareil");
+    return false;
+  }
+}
+
+function uid(prefix){ return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
+
+async function loadAll(){
+  clients = await loadJSON(K_CLIENTS, []);
+  courses = await loadJSON(K_COURSES, []);
+  depenses = await loadJSON(K_DEPENSES, []);
+  factures = await loadJSON(K_FACTURES, []);
+  caisseMouvements = await loadJSON(K_CAISSE, []);
+  settings = Object.assign({}, settings, await loadJSON(K_SETTINGS, {}));
+  renderDashboard();
+  renderAgenda();
+  renderClients();
+  renderDepenses();
+  renderFactures();
+  renderCaisse();
+  await refreshJustificatifIndex();
+}
+
+/* ============================= NAVIGATION ============================= */
+function switchScreen(name){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById('screen-'+name).classList.add('active');
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.screen===name));
+  document.getElementById('fabBtn').style.display = (name==='dashboard') ? 'none' : 'flex';
+  currentTabScreen = name;
+}
+let currentTabScreen = 'dashboard';
+
+function fabAction(){
+  if(currentTabScreen==='agenda') openCourseForm();
+  else if(currentTabScreen==='clients') openClientForm();
+  else if(currentTabScreen==='depenses') openDepenseForm();
+  else if(currentTabScreen==='justificatifs') openJustificatifForm();
+  else if(currentTabScreen==='factures') openFactureForm();
+  else if(currentTabScreen==='caisse') openCaisseMouvementForm();
+}
+
+function cyclerYear(){
+  const years = Array.from(new Set(courses.map(c=>new Date(c.dateDebut).getFullYear()).concat([new Date().getFullYear()])));
+  years.sort();
+  let idx = years.indexOf(currentYear);
+  currentYear = years[(idx+1) % years.length] || new Date().getFullYear();
+  document.getElementById('yearPill').textContent = currentYear;
+  renderDashboard(); renderAgenda();
+}
+
+function showToast(msg){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+function closeSheet(){
+  document.getElementById('sheetOverlay').classList.remove('active');
+  document.getElementById('sheetContent').innerHTML = '';
+}
+function openSheetHTML(html){
+  document.getElementById('sheetContent').innerHTML =
+    '<div class="sheet-handle"></div>' + html;
+  document.getElementById('sheetOverlay').classList.add('active');
+}
+
+function fmtCHF(n){
+  n = Number(n)||0;
+  return n.toLocaleString('fr-CH', {minimumFractionDigits:2, maximumFractionDigits:2}) + ' CHF';
+}
+function fmtDate(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('fr-CH', {day:'2-digit', month:'2-digit', year:'numeric'});
+}
+function clientName(c){
+  if(!c) return '';
+  return (c.entreprise ? c.entreprise + ' — ' : '') + c.prenom + ' ' + c.nom;
+}
+
+/* ============================= DASHBOARD ============================= */
+function renderDashboard(){
+  const yc = courses.filter(c=>c.dateDebut && new Date(c.dateDebut).getFullYear()===currentYear && isLiveStatut(c.statut));
+  const ca = yc.reduce((s,c)=>s+ (Number(c.totalFacture)||0) * (Number(c.partPerso)||100)/100, 0);
+  const yd = depenses.filter(d=>d.date && new Date(d.date).getFullYear()===currentYear);
+  const totalDep = yd.reduce((s,d)=>s + (Number(d.montantDeductible)||0), 0);
+  document.getElementById('kpiCA').textContent = fmtCHF(ca);
+  document.getElementById('kpiCourses').textContent = yc.length;
+  document.getElementById('kpiBenef').textContent = fmtCHF(ca-totalDep);
+
+  const titleEl = document.getElementById('encaissementsTitle');
+  if(titleEl){
+    titleEl.textContent = 'Encaissements ' + (new Date().getFullYear()===currentYear ? '(cette année)' : '('+currentYear+')');
+  }
+
+  const paidThisYear = courses.filter(c=>c.statut==='Payée' && c.dateDebut && new Date(c.dateDebut).getFullYear()===currentYear);
+  const encaisseEspeces = paidThisYear.filter(c=>c.modePaiement==='Cash').reduce((s,c)=>s+(Number(c.totalFacture)||0),0);
+  const encaisseBanque = paidThisYear.filter(c=>c.modePaiement && c.modePaiement!=='Cash').reduce((s,c)=>s+(Number(c.totalFacture)||0),0);
+  const encaisseSansMode = paidThisYear.filter(c=>!c.modePaiement).reduce((s,c)=>s+(Number(c.totalFacture)||0),0);
+  document.getElementById('encaissementsCard').innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:4px 0;"><span style="flex:1; min-width:0;">💵 Espèces</span><strong style="white-space:nowrap;">${fmtCHF(encaisseEspeces)}</strong></div>
+    <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:4px 0;"><span style="flex:1; min-width:0;">🏦 Banque / Carte / TWINT</span><strong style="white-space:nowrap;">${fmtCHF(encaisseBanque)}</strong></div>
+    ${encaisseSansMode>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:4px 0; color:var(--grey);"><span style="flex:1; min-width:0;">⚠ Sans mode renseigné</span><span style="white-space:nowrap;">${fmtCHF(encaisseSansMode)}</span></div>` : ''}
+    <div class="helper" style="text-align:center; margin-top:6px;">Montants bruts encaissés (avant part co-guidage) — à recouper avec votre relevé bancaire.</div>
+  `;
+
+  const todayISO0 = new Date().toISOString().slice(0,10);
+  const yearAll = courses.filter(c=>c.dateDebut && new Date(c.dateDebut).getFullYear()===currentYear);
+  const netAmount = c => (Number(c.totalFacture)||0) * (Number(c.partPerso)||100)/100;
+  const confirmedUpcoming = yearAll.filter(c=>c.statut==='Confirmée' && c.dateDebut>=todayISO0);
+  const demandeUpcoming = yearAll.filter(c=>c.statut==='Demande' && c.dateDebut>=todayISO0);
+  const joursConfirmesRestants = confirmedUpcoming.reduce((s,c)=>s+(Number(c.jours)||1),0);
+  const caConfirmeAVenir = confirmedUpcoming.reduce((s,c)=>s+netAmount(c),0);
+  const caEnDiscussion = demandeUpcoming.reduce((s,c)=>s+netAmount(c),0);
+  const joursEffectues = yearAll.filter(c=>['Effectuée','Facturée','Payée'].includes(c.statut)).reduce((s,c)=>s+(Number(c.jours)||1),0);
+  const nbAnnulees = yearAll.filter(c=>c.statut==='Annulée').length;
+  const nbReportees = yearAll.filter(c=>c.statut==='Reportée').length;
+  const denom = yearAll.filter(c=>c.statut!=='Demande').length;
+  const tauxAnnulation = denom>0 ? (nbAnnulees/denom*100) : 0;
+
+  document.getElementById('budgetCard').innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:4px 0;"><span style="flex:1; min-width:0;">Jours confirmés à venir</span><strong style="white-space:nowrap;">${joursConfirmesRestants} j</strong></div>
+    <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:4px 0;"><span style="flex:1; min-width:0;">CA confirmé à venir</span><strong style="white-space:nowrap;">${fmtCHF(caConfirmeAVenir)}</strong></div>
+    <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:4px 0; color:var(--grey);"><span style="flex:1; min-width:0;">CA en discussion (demandes)</span><span style="white-space:nowrap;">${fmtCHF(caEnDiscussion)}</span></div>
+    <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:4px 0; border-top:1px solid var(--grey-line); margin-top:6px; padding-top:8px;"><span style="flex:1; min-width:0;">Jours déjà effectués (${currentYear})</span><strong style="white-space:nowrap;">${joursEffectues} j</strong></div>
+    <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:4px 0; color:var(--grey);"><span style="flex:1; min-width:0;">Annulées / Reportées</span><span style="white-space:nowrap;">${nbAnnulees} / ${nbReportees}${denom>0?' · '+tauxAnnulation.toFixed(0)+'%':''}</span></div>
+  `;
+
+  const box = document.getElementById('dashRecentCourses');
+  const todayISO = new Date().toISOString().slice(0,10);
+  const upcoming = [...courses]
+    .filter(c=>c.dateDebut && c.dateDebut>=todayISO && isLiveStatut(c.statut))
+    .sort((a,b)=>new Date(a.dateDebut)-new Date(b.dateDebut))
+    .slice(0,4);
+  if(upcoming.length===0){
+    box.innerHTML = emptyState('🏔️','Aucune course à venir. Ajoutez-en une avec le bouton ci-dessus.');
+  } else {
+    box.innerHTML = upcoming.map(courseCardHTML).join('');
+  }
+  loadJSON(K_JUST_INDEX, []).then(idx=>{
+    document.getElementById('kpiJust').textContent = idx.filter(j=>j.date && new Date(j.date).getFullYear()===currentYear).length;
+  });
+}
+
+function emptyState(ic, txt){
+  return `<div class="empty-state"><div class="ic">${ic}</div><div class="txt">${txt}</div></div>`;
+}
+
+/* ============================= AGENDA ============================= */
+function relativeDayLabel(dateISO){
+  const todayISO = new Date().toISOString().slice(0,10);
+  const tomorrowISO = new Date(Date.now()+86400000).toISOString().slice(0,10);
+  if(dateISO===todayISO) return "Aujourd'hui";
+  if(dateISO===tomorrowISO) return "Demain";
+  return null;
+}
+function courseCardHTML(c){
+  const cl = clients.find(x=>x.id===c.clientId);
+  const badgeClass = STATUT_BADGE[c.statut] || 'pending';
+  const total = (Number(c.totalFacture)||0);
+  const rel = relativeDayLabel(c.dateDebut);
+  const dateLabel = rel ? `<strong style="color:var(--gold);">${rel}</strong> · ${fmtDate(c.dateDebut)}` : fmtDate(c.dateDebut);
+  let quickActions = '';
+  if(c.statut==='Demande' || c.statut==='Confirmée'){
+    quickActions += `<button type="button" class="qa-inline" onclick="quickSetStatut(event,'${c.id}','Effectuée')">✓ Effectuée</button>`;
+  }
+  if(c.statut==='Effectuée' || c.statut==='Facturée'){
+    quickActions += `<button type="button" class="qa-inline" onclick="quickMarkPayee(event,'${c.id}')">💰 Payée</button>`;
+  }
+  if(c.statut==='Demande'){
+    quickActions += `<button type="button" class="qa-inline secondary" onclick="quickSetStatut(event,'${c.id}','Confirmée')">Confirmer</button>`;
+  }
+  return `<div class="list-item" onclick="openCourseForm('${c.id}')">
+    <div class="li-top">
+      <div>
+        <div class="li-title">${escapeHTML(c.lieu||'Course')}</div>
+        <div class="li-sub">${dateLabel} · ${escapeHTML(c.activite||'')} ${cl ? '· '+escapeHTML(clientName(cl)) : ''}</div>
+      </div>
+      <div class="li-amount">${fmtCHF(total)}</div>
+    </div>
+    <span class="badge ${badgeClass}">${escapeHTML(c.statut||'—')}</span>
+    ${c.factureId && c.statut!=='Facturée' && c.statut!=='Payée' ? '<span class="badge invoiced" style="margin-left:6px;">📄 facturée</span>' : ''}
+    ${quickActions}
+  </div>`;
+}
+async function quickSetStatut(event, courseId, newStatut){
+  event.stopPropagation();
+  const idx = courses.findIndex(c=>c.id===courseId);
+  if(idx<0) return;
+  courses[idx].statut = newStatut;
+  await saveJSON(K_COURSES, courses);
+  showToast('Course marquée « '+newStatut+' »');
+  renderAgenda(); renderDashboard(); renderCaisse();
+}
+function quickMarkPayee(event, courseId){
+  event.stopPropagation();
+  const c = courses.find(x=>x.id===courseId);
+  if(!c) return;
+  openSheetHTML(`
+    <h3>Mode de paiement</h3>
+    <div class="helper">Comment ${escapeHTML(c.lieu||'cette course')} a-t-elle été payée ?</div>
+    <button class="btn btn-primary" onclick="confirmPayee('${courseId}','Cash')">💵 Espèces</button>
+    <button class="btn btn-secondary" onclick="confirmPayee('${courseId}','Compte bancaire')">🏦 Virement bancaire</button>
+    <button class="btn btn-secondary" onclick="confirmPayee('${courseId}','TWINT')">📱 TWINT</button>
+    <button class="btn btn-secondary" onclick="confirmPayee('${courseId}','Carte')">💳 Carte</button>
+  `);
+}
+async function confirmPayee(courseId, mode){
+  const idx = courses.findIndex(c=>c.id===courseId);
+  if(idx<0) return;
+  courses[idx].statut = 'Payée';
+  courses[idx].modePaiement = mode;
+  await saveJSON(K_COURSES, courses);
+  closeSheet(); showToast('Marquée payée · '+mode);
+  renderAgenda(); renderDashboard(); renderCaisse();
+}
+
+function renderAgenda(){
+  const box = document.getElementById('agendaList');
+  const todayISO = new Date().toISOString().slice(0,10);
+  const yearCourses = courses.filter(c=>c.dateDebut && new Date(c.dateDebut).getFullYear()===currentYear);
+  const upcoming = yearCourses.filter(c=>c.dateDebut>=todayISO).sort((a,b)=>new Date(a.dateDebut)-new Date(b.dateDebut));
+  const past = yearCourses.filter(c=>c.dateDebut<todayISO).sort((a,b)=>new Date(b.dateDebut)-new Date(a.dateDebut));
+
+  if(yearCourses.length===0){
+    box.innerHTML = emptyState('🏔️', `Aucune course en ${currentYear}. Touchez le bouton + pour en ajouter une — vous pouvez saisir vos demandes à l'avance, même pour l'année prochaine.`);
+    return;
+  }
+  let html = '';
+  html += `<h2 class="section-title">À venir${upcoming.length?' ('+upcoming.length+')':''}</h2>`;
+  html += upcoming.length ? upcoming.map(courseCardHTML).join('') : emptyState('📅', 'Aucune course à venir pour le moment.');
+  html += `<h2 class="section-title">Passées${past.length?' ('+past.length+')':''}</h2>`;
+  html += past.length ? past.map(courseCardHTML).join('') : emptyState('🏔️', 'Aucune course passée cette année.');
+  box.innerHTML = html;
+}
+
+let pendingCourseDraft = null;
+
+function captureCourseFormDraft(originalId){
+  return {
+    id: originalId || '',
+    dateDebut: document.getElementById('f_dateDebut').value,
+    dateFin: document.getElementById('f_dateFin').value,
+    activite: document.getElementById('f_activite').value,
+    lieu: document.getElementById('f_lieu').value,
+    clientId: document.getElementById('f_clientId').value,
+    tarifJour: document.getElementById('f_tarif').value,
+    montant: document.getElementById('f_montant').value,
+    montantOverride: document.getElementById('f_montant').value.trim()!=='',
+    transport: document.getElementById('f_transport').value,
+    materiel: document.getElementById('f_materiel').value,
+    statut: document.getElementById('f_statut').value,
+    modePaiement: document.getElementById('f_modePaiement').value,
+    partPerso: document.getElementById('f_partPerso').value,
+  };
+}
+function stashCourseDraftAndCreateClient(originalId){
+  pendingCourseDraft = captureCourseFormDraft(originalId);
+  closeSheet();
+  openClientForm(null, true);
+}
+
+function openCourseForm(id){
+  const c = id ? courses.find(x=>x.id===id) : null;
+  renderCourseFormSheet(c);
+}
+function renderCourseFormSheet(c){
+  const clientOptions = clients.map(cl=>`<option value="${cl.id}" ${c&&c.clientId===cl.id?'selected':''}>${escapeHTML(clientName(cl))}</option>`).join('');
+  const activOptions = ACTIVITES.map(a=>`<option ${c&&c.activite===a?'selected':''}>${a}</option>`).join('');
+  openSheetHTML(`
+    <h3>${c? 'Modifier la course' : 'Nouvelle course'}</h3>
+    <div class="row2">
+      <div><label>Date début</label><input type="date" id="f_dateDebut" value="${c?c.dateDebut:''}"></div>
+      <div><label>Date fin</label><input type="date" id="f_dateFin" value="${c?c.dateFin:''}"></div>
+    </div>
+    <label>Type d'activité</label>
+    <select id="f_activite"><option value="">—</option>${activOptions}</select>
+    <label>Lieu / course</label>
+    <input type="text" id="f_lieu" value="${c?escapeAttr(c.lieu):''}" placeholder="Ex. Intégrale de Peuterey">
+    <label>Client</label>
+    <select id="f_clientId"><option value="">— Sélectionner —</option>${clientOptions}</select>
+    <div class="helper">Pas encore dans la liste ? <a href="#" onclick="stashCourseDraftAndCreateClient('${c?c.id:''}'); return false;">Créer un client</a> — vos données déjà saisies seront conservées.</div>
+    <div class="row2">
+      <div><label>Tarif / jour (CHF)</label><input type="number" id="f_tarif" value="${c?c.tarifJour:''}" oninput="updateCourseCalc()"></div>
+      <div><label>Montant prestation (CHF)</label><input type="number" id="f_montant" value="${c&&c.montantOverride?c.montant:''}" placeholder="auto (tarif × jours)" oninput="updateCourseCalc()"></div>
+    </div>
+    <div class="helper">Laissez « Montant prestation » vide pour un calcul automatique (tarif × nb jours) qui se met à jour si vous changez le tarif ou les dates. Tapez un montant seulement pour un forfait fixe différent.</div>
+    <div class="row2">
+      <div><label>Frais transport (CHF)</label><input type="number" id="f_transport" value="${c&&c.transport?c.transport:0}" oninput="updateCourseCalc()"></div>
+      <div><label>Frais matériel (CHF)</label><input type="number" id="f_materiel" value="${c&&c.materiel?c.materiel:0}" oninput="updateCourseCalc()"></div>
+    </div>
+    <label>Statut de paiement</label>
+    <select id="f_statut">
+      ${STATUTS.map(s=>`<option ${c&&c.statut===s?'selected':(!c && s==='Demande'?'selected':'')}>${s}</option>`).join('')}
+    </select>
+    <label>Mode de paiement (si payée)</label>
+    <select id="f_modePaiement">
+      <option value="">—</option>
+      ${["Cash","Compte bancaire","TWINT","Carte"].map(m=>`<option ${c&&c.modePaiement===m?'selected':''}>${m}</option>`).join('')}
+    </select>
+    <div class="helper">Un paiement en espèces alimente automatiquement votre Caisse.</div>
+    <label>Part personnelle (%) — co-guidage</label>
+    <input type="number" id="f_partPerso" value="${c?(c.partPerso??100):100}" oninput="updateCourseCalc()">
+    <div class="helper">100% si vous guidez seul. Réduisez si la course est partagée avec un autre guide — la facture au client reste inchangée, seule votre comptabilité personnelle est ajustée.</div>
+    <div class="calc-readout" id="courseCalcBox"></div>
+    <button class="btn btn-primary" onclick="saveCourse('${c?c.id:''}')">Enregistrer</button>
+    ${c? '<button class="btn btn-danger" onclick="deleteCourse(\''+c.id+'\')">Supprimer cette course</button>' : ''}
+  `);
+  updateCourseCalc();
+}
+
+function toNum(v){
+  if(v===null||v===undefined) return 0;
+  const s = String(v).trim().replace(',', '.');
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
+function updateCourseCalc(){
+  const d1 = document.getElementById('f_dateDebut').value;
+  const d2 = document.getElementById('f_dateFin').value;
+  let jours = 1;
+  if(d1 && d2){ jours = Math.max(1, Math.round((new Date(d2)-new Date(d1))/86400000)+1); }
+  const tarif = toNum(document.getElementById('f_tarif').value);
+  const montantInput = document.getElementById('f_montant').value.trim();
+  const prestation = montantInput!=='' ? toNum(montantInput) : tarif*jours;
+  const transport = toNum(document.getElementById('f_transport').value);
+  const materiel = toNum(document.getElementById('f_materiel').value);
+  const total = prestation + transport + materiel;
+  const part = toNum(document.getElementById('f_partPerso').value) || 100;
+  const net = total * part/100;
+  document.getElementById('courseCalcBox').innerHTML = `
+    <div class="row"><span>Nb jours</span><span>${jours}</span></div>
+    <div class="row"><span>Prestation</span><span>${fmtCHF(prestation)}</span></div>
+    <div class="row"><span>+ Transport</span><span>${fmtCHF(transport)}</span></div>
+    <div class="row"><span>+ Matériel</span><span>${fmtCHF(materiel)}</span></div>
+    <div class="row total"><span>Total facturé au client</span><span>${fmtCHF(total)}</span></div>
+    ${part<100 ? `<div class="row" style="color:var(--gold-dark,#8a6c3f)"><span>Votre part (${part}%)</span><span>${fmtCHF(net)}</span></div>` : ''}
+  `;
+}
+
+async function saveCourse(id){
+  const d1 = document.getElementById('f_dateDebut').value;
+  const d2 = document.getElementById('f_dateFin').value || d1;
+  if(!d1){ showToast('Indiquez au moins une date de début'); return; }
+  const jours = Math.max(1, Math.round((new Date(d2)-new Date(d1))/86400000)+1);
+  const tarif = toNum(document.getElementById('f_tarif').value);
+  const montantInput = document.getElementById('f_montant').value.trim();
+  const isOverride = montantInput!=='';
+  const prestation = isOverride ? toNum(montantInput) : tarif*jours;
+  const transport = toNum(document.getElementById('f_transport').value);
+  const materiel = toNum(document.getElementById('f_materiel').value);
+  const total = prestation + transport + materiel;
+  const data = {
+    id: id || uid('crs_'),
+    dateDebut: d1, dateFin: d2, jours,
+    activite: document.getElementById('f_activite').value,
+    lieu: document.getElementById('f_lieu').value,
+    clientId: document.getElementById('f_clientId').value,
+    tarifJour: tarif, montant: prestation, montantOverride: isOverride,
+    transport, materiel, totalFacture: total,
+    statut: document.getElementById('f_statut').value,
+    modePaiement: document.getElementById('f_modePaiement').value,
+    partPerso: toNum(document.getElementById('f_partPerso').value) || 100,
+  };
+  const idx = courses.findIndex(c=>c.id===data.id);
+  if(idx>=0) courses[idx]=data; else courses.push(data);
+  await saveJSON(K_COURSES, courses);
+  closeSheet(); showToast('Course enregistrée'); renderAgenda(); renderDashboard(); renderCaisse();
+}
+async function deleteCourse(id){
+  if(!confirm('Supprimer définitivement cette course ?')) return;
+  courses = courses.filter(c=>c.id!==id);
+  await saveJSON(K_COURSES, courses);
+  closeSheet(); showToast('Course supprimée'); renderAgenda(); renderDashboard();
+}
+
+/* ============================= CLIENTS ============================= */
+function renderClients(filter){
+  const box = document.getElementById('clientsList');
+  let list = [...clients].sort((a,b)=>(a.nom||'').localeCompare(b.nom||''));
+  if(filter){
+    const f = filter.toLowerCase();
+    list = list.filter(c => (clientName(c)+' '+(c.email||'')).toLowerCase().includes(f));
+  }
+  box.innerHTML = list.length ? list.map(c=>`
+    <div class="list-item" onclick="openClientForm('${c.id}')">
+      <div class="li-top">
+        <div>
+          <div class="li-title">${escapeHTML(clientName(c))}</div>
+          <div class="li-sub">${escapeHTML(c.email||'')} ${c.telephone?'· '+escapeHTML(c.telephone):''}</div>
+        </div>
+      </div>
+    </div>
+  `).join('') : emptyState('👤','Aucun client. Touchez + pour en ajouter un.');
+}
+
+function openClientForm(id, preserveDraft){
+  if(!preserveDraft) pendingCourseDraft = null;
+  const c = id ? clients.find(x=>x.id===id) : null;
+  openSheetHTML(`
+    <h3>${c?'Modifier le client':'Nouveau client'}</h3>
+    <div class="row2">
+      <div><label>Prénom</label><input type="text" id="f_prenom" value="${c?escapeAttr(c.prenom):''}"></div>
+      <div><label>Nom</label><input type="text" id="f_nom" value="${c?escapeAttr(c.nom):''}"></div>
+    </div>
+    <label>Entreprise (si facturation société)</label>
+    <input type="text" id="f_entreprise" value="${c?escapeAttr(c.entreprise||''):''}">
+    <label>Email</label>
+    <input type="email" id="f_email" value="${c?escapeAttr(c.email||''):''}">
+    <label>Téléphone</label>
+    <input type="tel" id="f_telephone" value="${c?escapeAttr(c.telephone||''):''}">
+    <label>Adresse</label>
+    <input type="text" id="f_adresse" value="${c?escapeAttr(c.adresse||''):''}">
+    <label>Notes</label>
+    <textarea id="f_notes">${c?escapeHTML(c.notes||''):''}</textarea>
+    <button class="btn btn-primary" onclick="saveClient('${c?c.id:''}')">Enregistrer</button>
+    ${c? '<button class="btn btn-danger" onclick="deleteClient(\''+c.id+'\')">Supprimer ce client</button>' : ''}
+  `);
+}
+async function saveClient(id){
+  const nom = document.getElementById('f_nom').value.trim();
+  if(!nom){ showToast('Le nom est obligatoire'); return; }
+  const data = {
+    id: id || uid('cli_'),
+    prenom: document.getElementById('f_prenom').value.trim(),
+    nom, entreprise: document.getElementById('f_entreprise').value.trim(),
+    email: document.getElementById('f_email').value.trim(),
+    telephone: document.getElementById('f_telephone').value.trim(),
+    adresse: document.getElementById('f_adresse').value.trim(),
+    notes: document.getElementById('f_notes').value.trim(),
+  };
+  const idx = clients.findIndex(c=>c.id===data.id);
+  if(idx>=0) clients[idx]=data; else clients.push(data);
+  await saveJSON(K_CLIENTS, clients);
+  renderClients();
+
+  if(pendingCourseDraft){
+    const draft = pendingCourseDraft;
+    pendingCourseDraft = null;
+    draft.clientId = data.id;
+    closeSheet();
+    showToast('Client créé — reprise de votre course en cours');
+    renderCourseFormSheet(draft);
+    return;
+  }
+
+  closeSheet(); showToast('Client enregistré'); renderAgenda();
+}
+async function deleteClient(id){
+  if(!confirm('Supprimer ce client ?')) return;
+  clients = clients.filter(c=>c.id!==id);
+  await saveJSON(K_CLIENTS, clients);
+  closeSheet(); showToast('Client supprimé'); renderClients();
+}
+
+/* ============================= DEPENSES ============================= */
+function renderDepenses(){
+  const box = document.getElementById('depensesList');
+  const list = depenses.filter(d=>d.date && new Date(d.date).getFullYear()===currentYear)
+    .sort((a,b)=>new Date(b.date)-new Date(a.date));
+  box.innerHTML = list.length ? list.map(d=>`
+    <div class="list-item" onclick="openDepenseForm('${d.id}')">
+      <div class="li-top">
+        <div>
+          <div class="li-title">${escapeHTML(d.categorie||'Dépense')}</div>
+          <div class="li-sub">${fmtDate(d.date)} ${d.description?'· '+escapeHTML(d.description):''} ${d.justificatifId?'· 📎 justificatif':''}</div>
+        </div>
+        <div class="li-amount">${fmtCHF(d.montantDeductible)}</div>
+      </div>
+    </div>
+  `).join('') : emptyState('🧾', `Aucune dépense en ${currentYear}. Touchez + pour en ajouter une.`);
+}
+
+function openDepenseForm(id){
+  const d = id ? depenses.find(x=>x.id===id) : null;
+  const catOptions = DEPENSES_CATEGORIES.map(c=>`<option ${d&&d.categorie===c?'selected':''}>${c}</option>`).join('');
+  openSheetHTML(`
+    <h3>${d?'Modifier la dépense':'Nouvelle dépense'}</h3>
+    <label>Date</label>
+    <input type="date" id="f_date" value="${d?d.date:new Date().toISOString().slice(0,10)}">
+    <label>Catégorie</label>
+    <select id="f_categorie"><option value="">—</option>${catOptions}</select>
+    <label>Description</label>
+    <input type="text" id="f_description" value="${d?escapeAttr(d.description||''):''}">
+    <div class="row2">
+      <div><label>Montant total (CHF)</label><input type="number" id="f_montantTotal" value="${d?d.montantTotal:''}" oninput="updateDepenseCalc()"></div>
+      <div><label>Usage pro (%)</label><input type="number" id="f_usagePro" value="${d?(d.usagePro??100):100}" oninput="updateDepenseCalc()"></div>
+    </div>
+    <div class="calc-readout" id="depenseCalcBox"></div>
+    <label>Mode de paiement</label>
+    <select id="f_depModePaiement">
+      <option value="">—</option>
+      ${["Cash","Compte bancaire","TWINT","Carte"].map(m=>`<option ${d&&d.modePaiement===m?'selected':''}>${m}</option>`).join('')}
+    </select>
+    <div class="helper">Payé en espèces ? Cette dépense sera automatiquement déduite de votre Caisse.</div>
+    <div id="justAttachBox">${
+      d
+        ? (d.justificatifId
+            ? '<div class="helper">📎 Un justificatif est déjà lié à cette dépense.</div>'
+            : `<button type="button" class="btn btn-photo" onclick="attachJustificatifToDepense('${d.id}')">📷 Joindre un justificatif</button>`)
+        : '<div class="helper">💡 Pour classer une photo de ticket automatiquement, utilisez plutôt l\'onglet Justificatifs — la dépense se crée toute seule.</div>'
+    }</div>
+    <button class="btn btn-primary" onclick="saveDepense('${d?d.id:''}')">Enregistrer</button>
+    ${d? '<button class="btn btn-danger" onclick="deleteDepense(\''+d.id+'\')">Supprimer cette dépense</button>' : ''}
+  `);
+  updateDepenseCalc();
+}
+function updateDepenseCalc(){
+  const total = toNum(document.getElementById('f_montantTotal').value);
+  const pct = toNum(document.getElementById('f_usagePro').value);
+  const ded = total*pct/100;
+  document.getElementById('depenseCalcBox').innerHTML = `
+    <div class="row total"><span>Montant déductible</span><span>${fmtCHF(ded)}</span></div>`;
+}
+function attachJustificatifToDepense(depenseId){
+  closeSheet();
+  openJustificatifForm(depenseId);
+}
+async function saveDepense(id){
+  const date = document.getElementById('f_date').value;
+  if(!date){ showToast('La date est obligatoire'); return; }
+  const total = toNum(document.getElementById('f_montantTotal').value);
+  const pct = toNum(document.getElementById('f_usagePro').value) || 100;
+  const data = {
+    id: id || uid('dep_'),
+    date, categorie: document.getElementById('f_categorie').value,
+    description: document.getElementById('f_description').value.trim(),
+    montantTotal: total, usagePro: pct, montantDeductible: total*pct/100,
+    modePaiement: document.getElementById('f_depModePaiement').value,
+    justificatifId: (id && depenses.find(x=>x.id===id)?.justificatifId) || null,
+  };
+  const idx = depenses.findIndex(x=>x.id===data.id);
+  if(idx>=0) depenses[idx]=data; else depenses.push(data);
+  await saveJSON(K_DEPENSES, depenses);
+  closeSheet(); showToast('Dépense enregistrée'); renderDepenses(); renderDashboard(); renderCaisse();
+}
+async function deleteDepense(id){
+  if(!confirm('Supprimer cette dépense ?')) return;
+  depenses = depenses.filter(x=>x.id!==id);
+  await saveJSON(K_DEPENSES, depenses);
+  closeSheet(); showToast('Dépense supprimée'); renderDepenses();
+}
+
+/* ============================= FACTURES ============================= */
+function nextFactureNumero(year){
+  const n = factures.filter(f=>f.numero.startsWith(String(year)+'-')).length + 1;
+  return year + '-' + String(n).padStart(3,'0');
+}
+function courseAmount(c){ return Number(c.totalFacture)||0; }
+
+function renderFactures(){
+  const box = document.getElementById('facturesList');
+  const list = [...factures].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  box.innerHTML = list.length ? list.map(f=>{
+    const cl = clients.find(x=>x.id===f.clientId);
+    return `<div class="list-item" onclick="viewFacture('${f.id}')">
+      <div class="li-top">
+        <div>
+          <div class="li-title">Facture ${escapeHTML(f.numero)}</div>
+          <div class="li-sub">${fmtDate(f.date)} · ${cl?escapeHTML(clientName(cl)):'Client supprimé'} · ${f.courseIds.length} course(s)</div>
+        </div>
+        <div class="li-amount">${fmtCHF(f.total)}</div>
+      </div>
+    </div>`;
+  }).join('') : emptyState('📄', "Aucune facture. Touchez + pour regrouper une ou plusieurs courses d'un même client.");
+}
+
+function openFactureForm(){
+  const clientOptions = clients.map(c=>`<option value="${c.id}">${escapeHTML(clientName(c))}</option>`).join('');
+  openSheetHTML(`
+    <h3>Nouvelle facture</h3>
+    <label>Client</label>
+    <select id="f_factureClient" onchange="renderFactureCourseChecklist()"><option value="">— Sélectionner —</option>${clientOptions}</select>
+    <div id="factureCourseChecklist" style="margin-top:14px;"></div>
+    <div class="calc-readout" id="factureTotalBox" style="display:none;"></div>
+    <button class="btn btn-primary" id="factureGenBtn" style="display:none;" onclick="generateFacture()">Générer la facture (PDF)</button>
+  `);
+}
+
+function eligibleCoursesForClient(clientId){
+  return courses.filter(c => c.clientId===clientId && isLiveStatut(c.statut) && !c.factureId)
+    .sort((a,b)=>new Date(b.dateDebut)-new Date(a.dateDebut));
+}
+
+function renderFactureCourseChecklist(){
+  const clientId = document.getElementById('f_factureClient').value;
+  const box = document.getElementById('factureCourseChecklist');
+  const totalBox = document.getElementById('factureTotalBox');
+  const genBtn = document.getElementById('factureGenBtn');
+  if(!clientId){ box.innerHTML=''; totalBox.style.display='none'; genBtn.style.display='none'; return; }
+  const list = eligibleCoursesForClient(clientId);
+  if(!list.length){
+    box.innerHTML = '<div class="helper">Ce client n\'a aucune course disponible à facturer (déjà facturées ou annulées).</div>';
+    totalBox.style.display='none'; genBtn.style.display='none';
+    return;
+  }
+  box.innerHTML = '<label>Courses à inclure</label>' + list.map(c=>`
+    <label style="display:flex; align-items:center; gap:10px; font-weight:400; font-size:14px; padding:10px 0; border-bottom:1px solid var(--grey-line);">
+      <input type="checkbox" class="facture-course-chk" value="${c.id}" checked onchange="updateFactureTotal()" style="width:18px; height:18px;">
+      <span style="flex:1;">${fmtDate(c.dateDebut)} · ${escapeHTML(c.lieu||c.activite||'Course')}</span>
+      <span style="font-weight:700;">${fmtCHF(courseAmount(c))}</span>
+    </label>
+  `).join('');
+  genBtn.style.display = 'block';
+  updateFactureTotal();
+}
+function updateFactureTotal(){
+  const clientId = document.getElementById('f_factureClient').value;
+  const checked = Array.from(document.querySelectorAll('.facture-course-chk:checked')).map(el=>el.value);
+  const total = checked.reduce((s,id)=>{
+    const c = courses.find(x=>x.id===id);
+    return s + (c?courseAmount(c):0);
+  }, 0);
+  const totalBox = document.getElementById('factureTotalBox');
+  totalBox.style.display = checked.length ? 'block' : 'none';
+  totalBox.innerHTML = `<div class="row total"><span>${checked.length} course(s) sélectionnée(s)</span><span>${fmtCHF(total)}</span></div>`;
+}
+
+async function generateFacture(){
+  const preOpenedWin = window.open('', '_blank'); // ouvert immédiatement au clic pour éviter le blocage popup de Safari
+  const clientId = document.getElementById('f_factureClient').value;
+  const checked = Array.from(document.querySelectorAll('.facture-course-chk:checked')).map(el=>el.value);
+  if(!clientId || checked.length===0){ if(preOpenedWin) preOpenedWin.close(); showToast('Sélectionnez au moins une course'); return; }
+  const cl = clients.find(x=>x.id===clientId);
+  const selectedCourses = checked.map(id=>courses.find(c=>c.id===id)).filter(Boolean);
+  const total = selectedCourses.reduce((s,c)=>s+courseAmount(c), 0);
+  const year = new Date().getFullYear();
+  const numero = nextFactureNumero(year);
+  const factureId = uid('fac_');
+  const dateFacture = new Date().toISOString().slice(0,10);
+  const facture = {
+    id: factureId, numero, clientId, date: dateFacture,
+    echeance: new Date(Date.now()+30*86400000).toISOString().slice(0,10),
+    courseIds: checked, total,
+  };
+  factures.push(facture);
+  await saveJSON(K_FACTURES, factures);
+
+  // marquer les courses comme facturées (empêche de les refacturer par erreur)
+  checked.forEach(id=>{
+    const idx = courses.findIndex(c=>c.id===id);
+    if(idx>=0){
+      courses[idx].factureId = factureId;
+      if(courses[idx].statut!=='Payée') courses[idx].statut = 'Facturée';
+    }
+  });
+  await saveJSON(K_COURSES, courses);
+
+  closeSheet(); showToast('Facture '+numero+' générée');
+  renderFactures(); renderAgenda(); renderDashboard();
+  exportFacturePDF(facture, cl, selectedCourses, preOpenedWin);
+}
+
+async function viewFacture(id){
+  const f = factures.find(x=>x.id===id);
+  if(!f) return;
+  const cl = clients.find(x=>x.id===f.clientId);
+  const list = f.courseIds.map(id=>courses.find(c=>c.id===id)).filter(Boolean);
+  openSheetHTML(`
+    <h3>Facture ${escapeHTML(f.numero)}</h3>
+    <div class="calc-readout">
+      <div class="row"><span>Client</span><span>${cl?escapeHTML(clientName(cl)):'—'}</span></div>
+      <div class="row"><span>Date</span><span>${fmtDate(f.date)}</span></div>
+      <div class="row"><span>Échéance</span><span>${fmtDate(f.echeance)}</span></div>
+      <div class="row total"><span>Total</span><span>${fmtCHF(f.total)}</span></div>
+    </div>
+    <button class="btn btn-primary" onclick="reopenFacturePDF('${f.id}')">📄 Régénérer le PDF</button>
+    <div class="helper">La régénération reprend les données actuelles des courses liées — si vous les avez modifiées depuis, le PDF affichera les valeurs à jour, pas celles de l'envoi original.</div>
+  `);
+}
+function reopenFacturePDF(factureId){
+  const preOpenedWin = window.open('', '_blank');
+  const f = factures.find(x=>x.id===factureId);
+  const cl = clients.find(x=>x.id===f.clientId);
+  const list = f.courseIds.map(id=>courses.find(c=>c.id===id)).filter(Boolean);
+  exportFacturePDF(f, cl, list, preOpenedWin);
+}
+
+async function exportFacturePDF(facture, client, selectedCourses, preOpenedWin){
+  const win = preOpenedWin || window.open('', '_blank');
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'mm', format:'a4'});
+  const NAVY = [31,42,55], GOLD = [176,141,87], CREAM = [243,236,221];
+
+  doc.setFillColor(...NAVY); doc.rect(0,0,210,32,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(...GOLD);
+  doc.text(settings.nom, 15, 15);
+  doc.setFontSize(9); doc.setTextColor(230,230,230);
+  doc.text(settings.titre, 15, 21);
+  doc.setFontSize(20); doc.setTextColor(255,255,255);
+  doc.text('FACTURE', 195, 15, {align:'right'});
+  doc.setFontSize(10); doc.setTextColor(...GOLD);
+  doc.text('N° '+facture.numero, 195, 22, {align:'right'});
+  doc.setFontSize(8.5); doc.setTextColor(220,220,220);
+  doc.text('Date : '+fmtDate(facture.date)+'   ·   Échéance : '+fmtDate(facture.echeance), 195, 27, {align:'right'});
+
+  doc.setTextColor(...NAVY); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.text('FACTURÉ À', 15, 42);
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  let y = 48;
+  if(client){
+    if(client.entreprise){ doc.text(client.entreprise, 15, y); y+=5; doc.setFontSize(9); doc.text("À l'att. de "+client.prenom+' '+client.nom, 15, y); doc.setFontSize(10); y+=5; }
+    else { doc.text(client.prenom+' '+client.nom, 15, y); y+=5; }
+    if(client.adresse){ doc.text(client.adresse, 15, y); y+=5; }
+    if(client.email){ doc.text(client.email, 15, y); y+=5; }
+  }
+
+  let ty = 68;
+  doc.setFillColor(...NAVY); doc.rect(15, ty, 180, 8, 'F');
+  doc.setTextColor(255,255,255); doc.setFontSize(8.5); doc.setFont('helvetica','bold');
+  doc.text('Date', 18, ty+5.5);
+  doc.text('Description', 42, ty+5.5);
+  doc.text('Jours', 120, ty+5.5);
+  doc.text('Tarif/j', 138, ty+5.5);
+  doc.text('Montant', 190, ty+5.5, {align:'right'});
+  ty += 8;
+  doc.setTextColor(...NAVY); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  let rowN = 0;
+  for(const c of selectedCourses){
+    if(ty>265){ doc.addPage(); ty=20; }
+    if(rowN%2===0){ doc.setFillColor(...CREAM); doc.rect(15,ty,180,7,'F'); }
+    doc.text(fmtDate(c.dateDebut), 18, ty+5);
+    doc.text((c.lieu||c.activite||'Course').slice(0,38), 42, ty+5);
+    doc.text(String(c.jours||1), 122, ty+5);
+    doc.text(fmtCHF(c.tarifJour||0), 138, ty+5);
+    doc.text(fmtCHF(courseAmount(c)), 190, ty+5, {align:'right'});
+    ty += 7; rowN++;
+    if(c.transport){ doc.setFontSize(8); doc.setTextColor(107,114,128); doc.text('   + Transport', 42, ty+4); doc.text(fmtCHF(c.transport), 190, ty+4, {align:'right'}); doc.setFontSize(9); doc.setTextColor(...NAVY); ty+=6; }
+    if(c.materiel){ doc.setFontSize(8); doc.setTextColor(107,114,128); doc.text('   + Matériel', 42, ty+4); doc.text(fmtCHF(c.materiel), 190, ty+4, {align:'right'}); doc.setFontSize(9); doc.setTextColor(...NAVY); ty+=6; }
+  }
+
+  ty += 4;
+  doc.setDrawColor(...GOLD); doc.setLineWidth(0.6); doc.line(15, ty, 195, ty);
+  ty += 8;
+  doc.setFontSize(9); doc.setTextColor(107,114,128);
+  doc.text(settings.tvaMention, 15, ty);
+
+  doc.setFillColor(...CREAM); doc.rect(130, ty-6, 65, 12, 'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...NAVY);
+  doc.text('TOTAL', 135, ty+1.5);
+  doc.setFontSize(13);
+  doc.text(fmtCHF(facture.total), 192, ty+1.5, {align:'right'});
+
+  ty += 14;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...NAVY);
+  doc.text(settings.conditions, 15, ty);
+  ty += 8;
+  doc.setFontSize(8); doc.setTextColor(150,150,150);
+  doc.text('Merci de votre confiance — '+settings.nom+', '+settings.titre, 15, ty);
+
+  // ---- QR-facture suisse (page dédiée, format officiel bande de paiement) ----
+  try{
+    await addSwissQRPaymentSlip(doc, facture, client);
+  }catch(e){
+    console.error('QR-facture non générée', e);
+  }
+
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  if(win){
+    win.location.href = url;
+  } else {
+    openSheetHTML(`
+      <h3>PDF prêt</h3>
+      <div class="helper">Votre navigateur a bloqué l'ouverture automatique. Touchez le lien ci-dessous pour ouvrir la facture.</div>
+      <a href="${url}" target="_blank" class="btn btn-primary" style="text-decoration:none; display:block;">📄 Ouvrir la facture ${escapeHTML(facture.numero)}</a>
+    `);
+  }
+}
+
+/* Construit la bande de paiement QR suisse standard sur une nouvelle page :
+   Récépissé (gauche) + Section paiement (droite) avec QR code, séparées par
+   une ligne de découpe, conformément à la mise en page des banques suisses. */
+async function addSwissQRPaymentSlip(doc, facture, client){
+  doc.addPage();
+  const NAVY = [31,42,55];
+  const pageW = 210, pageH = 297;
+  const bandY = pageH - 105; // bande de 105mm de haut, en bas de page
+
+  doc.setDrawColor(180,180,180); doc.setLineDashPattern([2,1], 0); doc.setLineWidth(0.3);
+  doc.line(0, bandY, pageW, bandY);
+  doc.setLineDashPattern([], 0);
+
+  const payload = buildSwissQRPayload(facture.total, client, 'Facture '+facture.numero);
+  const qrUrl = await generateSwissQRDataUrl(payload);
+
+  // ---- Récépissé (gauche, 0-62mm) ----
+  let rx = 5, ry = bandY + 5;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...NAVY);
+  doc.text('Récépissé', rx, ry); ry += 7;
+  doc.setFontSize(6); doc.setFont('helvetica','bold'); doc.text('Compte / Payable à', rx, ry); ry += 3.5;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.text(normalizeIban(settings.iban), rx, ry); ry += 4;
+  doc.text(settings.nom, rx, ry); ry += 4;
+  doc.text(settings.rue, rx, ry); ry += 4;
+  doc.text(settings.npa+' '+settings.ville, rx, ry); ry += 6;
+  doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.text('Payable par', rx, ry); ry += 4;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  if(client){
+    doc.text(client.entreprise || ((client.prenom||'')+' '+(client.nom||'')), rx, ry); ry += 4;
+    if(client.adresse){ doc.text(client.adresse, rx, ry); ry += 4; }
+  }
+  ry = bandY + 68;
+  doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.text('Monnaie', rx, ry);
+  doc.text('Montant', rx+18, ry); ry += 4;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.text('CHF', rx, ry); doc.text(fmtCHF(facture.total).replace(' CHF',''), rx+18, ry);
+
+  // ligne de séparation verticale
+  doc.setDrawColor(180,180,180); doc.setLineDashPattern([2,1], 0); doc.setLineWidth(0.3);
+  doc.line(62, bandY, 62, pageH);
+  doc.setLineDashPattern([], 0);
+
+  // ---- Section paiement (droite, 62-210mm) ----
+  let px = 67, py = bandY + 5;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(...NAVY);
+  doc.text('Section paiement', px, py);
+
+  if(qrUrl){
+    doc.addImage(qrUrl, 'PNG', px, bandY+8, 46, 46);
+  } else {
+    doc.setDrawColor(...NAVY); doc.rect(px, bandY+8, 46, 46);
+    doc.setFontSize(7); doc.text('QR indisponible', px+8, bandY+32);
+  }
+
+  let qy = bandY + 58;
+  doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...NAVY);
+  doc.text('Monnaie', px, qy); doc.text('Montant', px+18, qy); qy += 4;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.text('CHF', px, qy); doc.text(fmtCHF(facture.total).replace(' CHF',''), px+18, qy);
+
+  let ix = 140, iy = bandY + 8;
+  doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.text('Compte / Payable à', ix, iy); iy += 3.5;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.text(normalizeIban(settings.iban), ix, iy); iy += 4;
+  doc.text(settings.nom, ix, iy); iy += 4;
+  doc.text(settings.rue, ix, iy); iy += 4;
+  doc.text(settings.npa+' '+settings.ville, ix, iy); iy += 6;
+  doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.text('Informations supplémentaires', ix, iy); iy += 3.5;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  doc.text('Facture '+facture.numero, ix, iy); iy += 6;
+  doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.text('Payable par', ix, iy); iy += 3.5;
+  doc.setFont('helvetica','normal'); doc.setFontSize(8);
+  if(client){
+    doc.text(client.entreprise || ((client.prenom||'')+' '+(client.nom||'')), ix, iy); iy += 4;
+    if(client.adresse){ doc.text(client.adresse, ix, iy); iy += 4; }
+  }
+}
+
+/* ============================= RÉGLAGES ============================= */
+function openReglagesForm(){
+  openSheetHTML(`
+    <h3>Réglages — vos coordonnées</h3>
+    <div class="helper">Utilisées sur vos factures et pour générer la QR-facture suisse.</div>
+    <label>Nom</label>
+    <input type="text" id="f_setNom" value="${escapeAttr(settings.nom)}">
+    <label>Titre</label>
+    <input type="text" id="f_setTitre" value="${escapeAttr(settings.titre)}">
+    <label>Rue et numéro</label>
+    <input type="text" id="f_setRue" value="${escapeAttr(settings.rue)}">
+    <div class="row2">
+      <div><label>NPA</label><input type="text" id="f_setNpa" value="${escapeAttr(settings.npa)}"></div>
+      <div><label>Ville</label><input type="text" id="f_setVille" value="${escapeAttr(settings.ville)}"></div>
+    </div>
+    <label>IBAN</label>
+    <input type="text" id="f_setIban" value="${escapeAttr(settings.iban)}">
+    <div class="helper">Format libre, avec ou sans espaces — normalisé automatiquement.</div>
+    <label>Mention TVA</label>
+    <input type="text" id="f_setTva" value="${escapeAttr(settings.tvaMention)}">
+    <label>Conditions de paiement</label>
+    <input type="text" id="f_setConditions" value="${escapeAttr(settings.conditions)}">
+    <button class="btn btn-primary" onclick="saveReglages()">Enregistrer</button>
+
+    <h3 style="margin-top:28px;">Sauvegarde de vos données</h3>
+    <div class="helper">Important : en cas de mise à jour de l'appli ou de changement d'appareil, exportez d'abord une sauvegarde, puis réimportez-la dans la nouvelle version — vos données ne se transfèrent pas automatiquement d'un lien à l'autre.</div>
+    <button class="btn btn-secondary" onclick="exportBackup()">💾 Exporter toutes mes données</button>
+    <button class="btn btn-secondary" onclick="document.getElementById('f_importFile').click()">📥 Importer une sauvegarde</button>
+    <input type="file" accept="application/json" id="f_importFile" style="display:none;" onchange="handleImportFile()">
+  `);
+}
+async function saveReglages(){
+  settings = {
+    nom: document.getElementById('f_setNom').value.trim(),
+    titre: document.getElementById('f_setTitre').value.trim(),
+    rue: document.getElementById('f_setRue').value.trim(),
+    npa: document.getElementById('f_setNpa').value.trim(),
+    ville: document.getElementById('f_setVille').value.trim(),
+    pays: 'CH',
+    iban: document.getElementById('f_setIban').value.trim(),
+    tvaMention: document.getElementById('f_setTva').value.trim(),
+    conditions: document.getElementById('f_setConditions').value.trim(),
+  };
+  await saveJSON(K_SETTINGS, settings);
+  closeSheet(); showToast('Réglages enregistrés');
+}
+
+/* ---- Sauvegarde complète : indispensable car les données restent liées à
+   l'adresse (URL ou fichier) précise utilisée pour ouvrir l'appli. Exporter
+   puis réimporter permet de transférer toutes les données vers une nouvelle
+   version, un nouveau lien, ou un nouvel appareil sans rien perdre. ---- */
+async function exportBackup(){
+  showToast('Préparation de la sauvegarde…');
+  const allJustificatifs = {};
+  for(const j of justIndex){
+    const rec = await loadJSON('justificatif:'+j.id, null);
+    if(rec) allJustificatifs[j.id] = rec;
+  }
+  const backup = {
+    app: 'johann-filliez-compta', version: 1, exportedAt: new Date().toISOString(),
+    clients, courses, depenses, factures, caisseMouvements, settings,
+    justificatifsIndex: justIndex, justificatifs: allJustificatifs,
+  };
+  const blob = new Blob([JSON.stringify(backup)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'sauvegarde-johann-filliez-'+new Date().toISOString().slice(0,10)+'.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 5000);
+  showToast('Sauvegarde téléchargée');
+}
+
+async function handleImportFile(){
+  const input = document.getElementById('f_importFile');
+  const file = input.files && input.files[0];
+  if(!file) return;
+  if(!confirm("Importer cette sauvegarde va REMPLACER toutes les données actuellement présentes dans l'appli. Continuer ?")){
+    input.value = '';
+    return;
+  }
+  let backup;
+  try{
+    const text = await file.text();
+    backup = JSON.parse(text);
+  }catch(e){
+    showToast('Fichier de sauvegarde invalide');
+    return;
+  }
+  try{
+    clients = backup.clients || [];
+    courses = backup.courses || [];
+    depenses = backup.depenses || [];
+    factures = backup.factures || [];
+    caisseMouvements = backup.caisseMouvements || [];
+    settings = Object.assign({}, settings, backup.settings || {});
+    await saveJSON(K_CLIENTS, clients);
+    await saveJSON(K_COURSES, courses);
+    await saveJSON(K_DEPENSES, depenses);
+    await saveJSON(K_FACTURES, factures);
+    await saveJSON(K_CAISSE, caisseMouvements);
+    await saveJSON(K_SETTINGS, settings);
+
+    const importedJust = backup.justificatifs || {};
+    for(const id in importedJust){
+      await saveJSON('justificatif:'+id, importedJust[id]);
+    }
+    justIndex = backup.justificatifsIndex || [];
+    await saveJSON(K_JUST_INDEX, justIndex);
+
+    closeSheet();
+    showToast('Sauvegarde importée avec succès');
+    renderDashboard(); renderAgenda(); renderClients(); renderDepenses();
+    renderFactures(); renderCaisse(); renderJustGrid();
+  }catch(e){
+    console.error('Erreur import', e);
+    showToast("Erreur pendant l'import — vérifiez le fichier");
+  }
+}
+
+/* ============================= QR-FACTURE SUISSE ============================= */
+function normalizeIban(iban){ return (iban||'').replace(/\s+/g,'').toUpperCase(); }
+
+/* Construit le payload officiel SPC (Swiss Payments Code) pour une QR-facture.
+   Référence "NON" car un IBAN standard (non QR-IBAN) n'a pas besoin de
+   référence structurée — la norme le permet explicitement. */
+function buildSwissQRPayload(amount, client, unstructuredMessage){
+  const L = [];
+  L.push('SPC');            // QRType
+  L.push('0200');            // Version
+  L.push('1');                // Coding UTF-8
+  L.push(normalizeIban(settings.iban));
+  L.push('S');                 // Adresse créancier structurée
+  L.push(settings.nom || '');
+  L.push(streetName(settings.rue));
+  L.push(buildingNumber(settings.rue));
+  L.push(settings.npa || '');
+  L.push(settings.ville || '');
+  L.push(settings.pays || 'CH');
+  for(let i=0;i<6;i++) L.push(''); // créancier bénéficiaire ultime (non utilisé)
+  L.push(amount>0 ? amount.toFixed(2) : '');
+  L.push('CHF');
+  if(client && (client.nom || client.entreprise)){
+    L.push('S');
+    L.push(client.entreprise || ((client.prenom||'')+' '+(client.nom||'')));
+    L.push(streetName(client.adresse||''));
+    L.push(buildingNumber(client.adresse||''));
+    L.push('');           // NPA débiteur (souvent inclus dans le champ adresse libre du client)
+    L.push('');           // Ville débiteur
+    L.push('CH');
+  } else {
+    for(let i=0;i<7;i++) L.push('');
+  }
+  L.push('NON');       // Type de référence : IBAN standard, pas de référence structurée
+  L.push('');            // Référence (vide, car NON)
+  L.push((unstructuredMessage||'').slice(0,140));
+  L.push('EPD');       // Fin des données de paiement
+  return L.join('\r\n');
+}
+function streetName(full){
+  const m = (full||'').match(/^(.*?)(\s+\d.*)?$/);
+  return m ? m[1].trim() : (full||'').trim();
+}
+function buildingNumber(full){
+  const m = (full||'').match(/(\d+[a-zA-Z]?)\s*$/);
+  return m ? m[1] : '';
+}
+
+/* Génère une image (dataURL PNG) du QR code, avec la croix suisse au centre,
+   via la librairie qrcodejs chargée en CDN. */
+function generateSwissQRDataUrl(payload){
+  return new Promise((resolve)=>{
+    try{
+      if(typeof QRCode==='undefined'){ console.error('Librairie QRCode indisponible'); resolve(null); return; }
+      const holder = document.createElement('div');
+      holder.style.display = 'none';
+      document.body.appendChild(holder);
+      new QRCode(holder, {
+        text: payload, width: 512, height: 512,
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+      setTimeout(()=>{
+        try{
+          const canvas = holder.querySelector('canvas');
+          if(!canvas){ document.body.removeChild(holder); resolve(null); return; }
+          const ctx = canvas.getContext('2d');
+          // croix suisse au centre (carré rouge + croix blanche), conforme à la norme
+          const cx = canvas.width/2, cy = canvas.height/2, s = canvas.width*0.14;
+          ctx.fillStyle = '#fff'; ctx.fillRect(cx-s/2-4, cy-s/2-4, s+8, s+8);
+          ctx.fillStyle = '#000'; ctx.fillRect(cx-s/2-2, cy-s/2-2, s+4, s+4);
+          ctx.fillStyle = '#D8232A'; ctx.fillRect(cx-s/2, cy-s/2, s, s);
+          const barW = s*0.22, barL = s*0.62;
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(cx-barW/2, cy-barL/2, barW, barL);
+          ctx.fillRect(cx-barL/2, cy-barW/2, barL, barW);
+          const url = canvas.toDataURL('image/png');
+          document.body.removeChild(holder);
+          resolve(url);
+        }catch(e){ console.error('Erreur génération QR', e); resolve(null); }
+      }, 60);
+    }catch(e){ console.error('Erreur génération QR', e); resolve(null); }
+  });
+}
+
+/* ============================= CAISSE ============================= */
+/* Livre de caisse : combine automatiquement les courses payées en espèces
+   (entrées) et les dépenses payées en espèces (sorties) avec les mouvements
+   manuels (dépôts en banque, retraits, solde initial), triés par date, avec
+   un solde qui se recalcule à chaque ligne. Les montants utilisés sont les
+   montants BRUTS réellement en main (pas la part personnelle co-guidage,
+   ni la part déductible fiscalement) : c'est ce qui compte pour compter le
+   cash physique. */
+function getCaisseLedger(){
+  const entries = [];
+  courses.filter(c=>c.statut==='Payée' && c.modePaiement==='Cash').forEach(c=>{
+    entries.push({
+      date: c.dateDebut, desc: 'Course — '+(c.lieu||c.activite||'Sans titre'),
+      entree: Number(c.totalFacture)||0, sortie: 0, auto: true, kind:'course',
+    });
+  });
+  depenses.filter(d=>d.modePaiement==='Cash').forEach(d=>{
+    entries.push({
+      date: d.date, desc: 'Dépense — '+(d.categorie||d.description||'Sans titre'),
+      entree: 0, sortie: Number(d.montantTotal)||0, auto: true, kind:'depense',
+    });
+  });
+  caisseMouvements.forEach(m=>{
+    entries.push({
+      date: m.date, desc: m.description, entree: Number(m.entree)||0, sortie: Number(m.sortie)||0,
+      auto: false, id: m.id,
+    });
+  });
+  entries.sort((a,b)=> (a.date||'').localeCompare(b.date||''));
+  let solde = 0;
+  entries.forEach(e=>{ solde += e.entree - e.sortie; e.soldeApres = solde; });
+  return entries;
+}
+
+function renderCaisse(){
+  const ledger = getCaisseLedger();
+  const soldeFinal = ledger.length ? ledger[ledger.length-1].soldeApres : 0;
+  const soldeEl = document.getElementById('caisseSoldeVal');
+  if(soldeEl) soldeEl.textContent = fmtCHF(soldeFinal);
+
+  const box = document.getElementById('caisseList');
+  if(!box) return;
+  if(!ledger.length){
+    box.innerHTML = emptyState('🪙', "Aucun mouvement de caisse. Les courses payées en espèces et les dépenses payées cash apparaîtront ici automatiquement, ou ajoutez un mouvement manuel (dépôt, retrait, solde initial) avec le bouton +.");
+    return;
+  }
+  box.innerHTML = [...ledger].reverse().map(e=>`
+    <div class="list-item" ${e.auto?'':`onclick="openCaisseMouvementForm('${e.id}')"`}>
+      <div class="li-top">
+        <div>
+          <div class="li-title">${escapeHTML(e.desc)}</div>
+          <div class="li-sub">${fmtDate(e.date)} ${e.auto?'· auto':'· manuel'} · solde après : ${fmtCHF(e.soldeApres)}</div>
+        </div>
+        <div class="li-amount" style="color:${e.entree>0?'var(--green)':'var(--red)'};">
+          ${e.entree>0 ? '+'+fmtCHF(e.entree) : '−'+fmtCHF(e.sortie)}
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openCaisseMouvementForm(id){
+  const m = id ? caisseMouvements.find(x=>x.id===id) : null;
+  openSheetHTML(`
+    <h3>${m?'Modifier le mouvement':'Mouvement de caisse manuel'}</h3>
+    <div class="helper">Pour un dépôt à la banque, un retrait, ou un solde initial de caisse — les courses et dépenses en espèces s'ajoutent déjà automatiquement.</div>
+    <label>Date</label>
+    <input type="date" id="f_caisseDate" value="${m?m.date:new Date().toISOString().slice(0,10)}">
+    <label>Description</label>
+    <input type="text" id="f_caisseDesc" value="${m?escapeAttr(m.description||''):''}" placeholder="Ex. Dépôt à la banque, solde initial...">
+    <div class="row2">
+      <div><label>Entrée (CHF)</label><input type="number" id="f_caisseEntree" value="${m?m.entree||'':''}"></div>
+      <div><label>Sortie (CHF)</label><input type="number" id="f_caisseSortie" value="${m?m.sortie||'':''}"></div>
+    </div>
+    <div class="helper">Un dépôt à la banque est une <strong>sortie</strong> de caisse (l'argent quitte votre poche pour la banque).</div>
+    <button class="btn btn-primary" onclick="saveCaisseMouvement('${m?m.id:''}')">Enregistrer</button>
+    ${m? '<button class="btn btn-danger" onclick="deleteCaisseMouvement(\''+m.id+'\')">Supprimer ce mouvement</button>' : ''}
+  `);
+}
+async function saveCaisseMouvement(id){
+  const date = document.getElementById('f_caisseDate').value;
+  if(!date){ showToast('La date est obligatoire'); return; }
+  const data = {
+    id: id || uid('cai_'),
+    date, description: document.getElementById('f_caisseDesc').value.trim(),
+    entree: toNum(document.getElementById('f_caisseEntree').value),
+    sortie: toNum(document.getElementById('f_caisseSortie').value),
+  };
+  const idx = caisseMouvements.findIndex(x=>x.id===data.id);
+  if(idx>=0) caisseMouvements[idx]=data; else caisseMouvements.push(data);
+  await saveJSON(K_CAISSE, caisseMouvements);
+  closeSheet(); showToast('Mouvement enregistré'); renderCaisse();
+}
+async function deleteCaisseMouvement(id){
+  if(!confirm('Supprimer ce mouvement ?')) return;
+  caisseMouvements = caisseMouvements.filter(x=>x.id!==id);
+  await saveJSON(K_CAISSE, caisseMouvements);
+  closeSheet(); showToast('Mouvement supprimé'); renderCaisse();
+}
+
+/* ============================= JUSTIFICATIFS ============================= */
+let justIndex = [];
+async function refreshJustificatifIndex(){
+  justIndex = await loadJSON(K_JUST_INDEX, []);
+  renderJustGrid();
+}
+function nextJustId(year){
+  const n = justIndex.filter(j=>j.id.includes('-'+year+'-')).length + 1;
+  return 'J-' + year + '-' + String(n).padStart(3,'0');
+}
+
+function renderJustGrid(){
+  const wrap = document.getElementById('justGridWrap');
+  const list = justIndex.filter(j=>j.date && new Date(j.date).getFullYear()===currentYear)
+    .sort((a,b)=>new Date(b.date)-new Date(a.date));
+  document.getElementById('justCount').textContent = list.length + ' justificatif(s) enregistré(s) pour ' + currentYear;
+  if(list.length){
+    wrap.innerHTML = '<div class="receipt-grid" id="justGrid">' + list.map(j=>`
+      <div class="receipt-thumb" onclick="viewJustificatif('${j.id}')">
+        <img src="${j.thumb}" loading="lazy">
+        <div class="num">${j.id.replace('J-'+currentYear+'-','#')}</div>
+      </div>
+    `).join('') + '</div>';
+  } else {
+    wrap.innerHTML = '<div class="receipt-grid" id="justGrid"></div>' +
+      emptyState('📷', `Aucun justificatif pour ${currentYear}. Touchez + pour photographier un ticket.`);
+  }
+}
+
+function openJustificatifForm(depenseId){
+  const linkedDepense = depenseId ? depenses.find(x=>x.id===depenseId) : null;
+
+  if(linkedDepense){
+    openSheetHTML(`
+      <h3>Joindre une photo</h3>
+      <div class="helper">Cette photo sera liée à : ${escapeHTML(linkedDepense.categorie||'Dépense')} · ${fmtDate(linkedDepense.date)} · ${fmtCHF(linkedDepense.montantTotal)}</div>
+      <label>Photo</label>
+      <input type="file" accept="image/*" capture="environment" id="f_photo" onchange="previewJustPhoto()">
+      <div id="justPhotoPreview" style="margin-top:10px;"></div>
+      <button class="btn btn-primary" onclick="saveJustificatif('${depenseId}')">Enregistrer la photo</button>
+    `);
+    return;
+  }
+
+  const catOptions = DEPENSES_CATEGORIES.map(c=>`<option>${c}</option>`).join('');
+  openSheetHTML(`
+    <h3>Nouveau justificatif</h3>
+    <label>Photo</label>
+    <input type="file" accept="image/*" capture="environment" id="f_photo" onchange="previewJustPhoto()">
+    <div id="justPhotoPreview" style="margin-top:10px;"></div>
+    <label>Date</label>
+    <input type="date" id="f_jdate" value="${new Date().toISOString().slice(0,10)}">
+    <label>Catégorie de dépense</label>
+    <select id="f_jcategorie"><option value="">— Choisir —</option>${catOptions}</select>
+    <div class="helper">La dépense correspondante est créée automatiquement avec cette catégorie — pas besoin de la ressaisir dans l'onglet Dépenses.</div>
+    <div class="row2">
+      <div><label>Montant total (CHF)</label><input type="number" id="f_jmontant" oninput="updateJustCalc()"></div>
+      <div><label>Usage pro (%)</label><input type="number" id="f_jusagePro" value="100" oninput="updateJustCalc()"></div>
+    </div>
+    <div class="calc-readout" id="justCalcBox"></div>
+    <label>Description</label>
+    <input type="text" id="f_jdescription" placeholder="Ex. Restaurant client, essence...">
+    <button class="btn btn-primary" onclick="saveJustificatif()">Enregistrer</button>
+  `);
+  updateJustCalc();
+}
+function updateJustCalc(){
+  const total = toNum(document.getElementById('f_jmontant').value);
+  const pct = toNum(document.getElementById('f_jusagePro').value) || 100;
+  document.getElementById('justCalcBox').innerHTML =
+    `<div class="row total"><span>Montant déductible</span><span>${fmtCHF(total*pct/100)}</span></div>`;
+}
+let currentPhotoDataUrl = null;
+function previewJustPhoto(){
+  const input = document.getElementById('f_photo');
+  const file = input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e){
+    const img = new Image();
+    img.onload = function(){
+      const maxDim = 1400;
+      let w = img.width, h = img.height;
+      if(w>h && w>maxDim){ h = h*maxDim/w; w = maxDim; }
+      else if(h>=w && h>maxDim){ w = w*maxDim/h; h = maxDim; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      currentPhotoDataUrl = canvas.toDataURL('image/jpeg', 0.72);
+      document.getElementById('justPhotoPreview').innerHTML =
+        `<img src="${currentPhotoDataUrl}" style="width:100%; border-radius:10px; border:1px solid var(--grey-line);">`;
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+async function saveJustificatif(linkDepenseId){
+  if(!currentPhotoDataUrl){ showToast('Prenez ou choisissez une photo'); return; }
+
+  if(linkDepenseId){
+    const dep = depenses.find(x=>x.id===linkDepenseId);
+    const date = dep ? dep.date : new Date().toISOString().slice(0,10);
+    const year = new Date(date).getFullYear();
+    const id = nextJustId(year);
+    const record = {
+      id, date, montant: dep?dep.montantTotal:0,
+      description: dep?dep.description:'', categorie: dep?dep.categorie:'',
+      image: currentPhotoDataUrl,
+    };
+    const ok = await saveJSON('justificatif:'+id, record);
+    if(!ok) return;
+    justIndex.push({id, date: record.date, montant: record.montant, description: record.description, thumb: currentPhotoDataUrl});
+    await saveJSON(K_JUST_INDEX, justIndex);
+    const idx = depenses.findIndex(x=>x.id===linkDepenseId);
+    if(idx>=0){ depenses[idx].justificatifId = id; await saveJSON(K_DEPENSES, depenses); }
+    currentPhotoDataUrl = null;
+    closeSheet(); showToast('Photo liée à la dépense ('+id+')');
+    renderDepenses(); renderJustGrid(); renderDashboard();
+    return;
+  }
+
+  const categorie = document.getElementById('f_jcategorie').value;
+  if(!categorie){ showToast('Choisissez une catégorie'); return; }
+  const date = document.getElementById('f_jdate').value || new Date().toISOString().slice(0,10);
+  const montantTotal = toNum(document.getElementById('f_jmontant').value);
+  const usagePro = toNum(document.getElementById('f_jusagePro').value) || 100;
+  const description = document.getElementById('f_jdescription').value.trim();
+  const year = new Date(date).getFullYear();
+  const id = nextJustId(year);
+  const record = { id, date, montant: montantTotal, description, categorie, image: currentPhotoDataUrl };
+  const ok = await saveJSON('justificatif:'+id, record);
+  if(!ok) return;
+  justIndex.push({id, date, montant: montantTotal, description, thumb: currentPhotoDataUrl});
+  await saveJSON(K_JUST_INDEX, justIndex);
+
+  const depData = {
+    id: uid('dep_'), date, categorie, description,
+    montantTotal, usagePro, montantDeductible: montantTotal*usagePro/100,
+    justificatifId: id,
+  };
+  depenses.push(depData);
+  await saveJSON(K_DEPENSES, depenses);
+
+  currentPhotoDataUrl = null;
+  closeSheet(); showToast('Justificatif '+id+' enregistré et classé en « '+categorie+' »');
+  renderJustGrid(); renderDepenses(); renderDashboard();
+}
+async function viewJustificatif(id){
+  const rec = await loadJSON('justificatif:'+id, null);
+  if(!rec) return;
+  openSheetHTML(`
+    <h3>${id}</h3>
+    <img src="${rec.image}" style="width:100%; border-radius:12px; border:1px solid var(--grey-line);">
+    <div class="calc-readout" style="margin-top:12px;">
+      <div class="row"><span>Date</span><span>${fmtDate(rec.date)}</span></div>
+      <div class="row"><span>Catégorie</span><span>${escapeHTML(rec.categorie||'—')}</span></div>
+      <div class="row"><span>Montant</span><span>${fmtCHF(rec.montant)}</span></div>
+      <div class="row"><span>Description</span><span>${escapeHTML(rec.description||'—')}</span></div>
+    </div>
+    <button class="btn btn-danger" onclick="deleteJustificatif('${id}')">Supprimer ce justificatif</button>
+  `);
+}
+async function deleteJustificatif(id){
+  if(!confirm('Supprimer ce justificatif ? Cette action est définitive.')) return;
+  justIndex = justIndex.filter(j=>j.id!==id);
+  await saveJSON(K_JUST_INDEX, justIndex);
+  const depIdx = depenses.findIndex(d=>d.justificatifId===id);
+  if(depIdx>=0){ depenses[depIdx].justificatifId = null; await saveJSON(K_DEPENSES, depenses); renderDepenses(); }
+  closeSheet(); showToast('Justificatif supprimé'); renderJustGrid();
+}
+
+async function exportJustificatifsPDF(){
+  const win = window.open('', '_blank'); // ouvert immédiatement au clic pour éviter le blocage popup de Safari
+  const list = justIndex.filter(j=>j.date && new Date(j.date).getFullYear()===currentYear)
+    .sort((a,b)=>new Date(a.date)-new Date(b.date));
+  if(!list.length){ if(win) win.close(); showToast('Aucun justificatif pour '+currentYear); return; }
+  showToast('Génération du PDF…');
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'mm', format:'a4'});
+
+  // Page de garde : index
+  doc.setFontSize(18); doc.setTextColor(31,42,55);
+  doc.text('Justificatifs '+currentYear, 15, 20);
+  doc.setFontSize(10); doc.setTextColor(107,114,128);
+  doc.text('Johann Filliez — '+list.length+' pièce(s)', 15, 27);
+  let y = 38;
+  doc.setFontSize(10); doc.setTextColor(31,42,55);
+  let total = 0;
+  for(const j of list){
+    if(y>280){ doc.addPage(); y=20; }
+    doc.text(`${j.id}   ${fmtDate(j.date)}   ${escapeHTML(j.description||'')}`, 15, y);
+    doc.text(fmtCHF(j.montant), 180, y, {align:'right'});
+    total += Number(j.montant)||0;
+    y += 7;
+  }
+  y += 4;
+  doc.setFontSize(11); doc.text('Total', 15, y);
+  doc.text(fmtCHF(total), 180, y, {align:'right'});
+
+  // Une page par justificatif
+  for(const j of list){
+    const rec = await loadJSON('justificatif:'+j.id, null);
+    if(!rec) continue;
+    doc.addPage();
+    doc.setFontSize(13); doc.setTextColor(31,42,55);
+    doc.text(rec.id, 15, 18);
+    doc.setFontSize(9); doc.setTextColor(107,114,128);
+    doc.text(`${fmtDate(rec.date)}  ·  ${fmtCHF(rec.montant)}  ·  ${rec.description||''}`, 15, 24);
+    try{
+      const props = doc.getImageProperties(rec.image);
+      const maxW = 180, maxH = 250;
+      let w = props.width, h = props.height;
+      const ratio = Math.min(maxW/w, maxH/h);
+      w = w*ratio; h = h*ratio;
+      doc.addImage(rec.image, 'JPEG', 15, 32, w, h);
+    }catch(e){ console.error(e); }
+  }
+
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  if(win){
+    win.location.href = url;
+  } else {
+    openSheetHTML(`
+      <h3>PDF prêt</h3>
+      <div class="helper">Votre navigateur a bloqué l'ouverture automatique. Touchez le lien ci-dessous pour ouvrir le document.</div>
+      <a href="${url}" target="_blank" class="btn btn-primary" style="text-decoration:none; display:block;">📄 Ouvrir les justificatifs ${currentYear}</a>
+    `);
+  }
+}
+
+/* ============================= UTIL ============================= */
+function escapeHTML(str){
+  return String(str==null?'':str).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+function escapeAttr(str){ return escapeHTML(str); }
+
+/* ============================= INIT ============================= */
+document.getElementById('yearPill').textContent = currentYear;
+(async function boot(){
+  clearTimeout(window.__bootWatchdog);
+  let settled = false;
+  function showBootError(msg){
+    const overlay = document.getElementById('loadingOverlay');
+    if(!overlay) return;
+    overlay.innerHTML = `
+      <div style="font-family:Georgia,serif; font-size:20px; font-weight:700; color:var(--navy); margin-bottom:12px;">Johann Filliez</div>
+      <div style="font-size:14px; color:#B3413A; max-width:300px; text-align:center; line-height:1.6; padding:0 24px;">${msg}</div>
+    `;
+  }
+  const timeoutId = setTimeout(()=>{
+    if(settled) return;
+    showBootError(
+      "⚠ Le chargement prend anormalement longtemps.<br><br>" +
+      "Cela arrive le plus souvent quand le fichier est ouvert dans un aperçu " +
+      "(app Fichiers, Quick Look) plutôt que dans un vrai onglet Safari.<br><br>" +
+      "Ouvrez ce fichier depuis Safari (pas depuis l'app Fichiers), puis " +
+      "utilisez le bouton de partage → « Sur l'écran d'accueil »."
+    );
+  }, 6000);
+  try{
+    await loadAll();
+    settled = true;
+    clearTimeout(timeoutId);
+    const overlay = document.getElementById('loadingOverlay');
+    if(overlay) overlay.style.display = 'none';
+  }catch(e){
+    settled = true;
+    clearTimeout(timeoutId);
+    console.error('Erreur de démarrage', e);
+    showBootError(
+      "⚠ Une erreur est survenue au démarrage.<br><br>" +
+      "Essayez de fermer et rouvrir l'appli. Si le problème persiste, " +
+      "vérifiez que le fichier est bien ouvert depuis Safari."
+    );
+  }
+})();
+</script>
+</body>
+</html>
