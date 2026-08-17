@@ -74,6 +74,11 @@
   .badge.done{background:#DCF3EE; color:#0F7A63;}
   .badge.invoiced{background:#EAE3F5; color:#5B3E9E;}
   .badge.postponed{background:#FCEBD9; color:#B0631F;}
+  .pay-dot{display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:5px; vertical-align:middle;}
+  .pay-dot.red{background:#C0392B;}
+  .pay-dot.orange{background:#D08A1E;}
+  .pay-dot.green{background:#2E9E5B;}
+  .participant-row{background:#fff; border:1px solid var(--grey-line); border-radius:10px; padding:10px 12px; margin-bottom:8px;}
   .qa-inline{display:inline-block; margin-top:8px; margin-left:6px; padding:6px 12px; border-radius:20px;
     background:var(--navy); color:var(--gold); font-size:11.5px; font-weight:700; border:none; cursor:pointer;}
   .qa-inline.secondary{background:var(--gold-light); color:var(--navy); border:1px solid var(--gold);}
@@ -235,6 +240,20 @@
       <h2 class="section-title">Mouvements</h2>
       <div id="caisseList"></div>
     </section>
+
+    <!-- STATISTIQUES -->
+    <section class="screen" id="screen-stats">
+      <h2 class="section-title">Taux de remplissage</h2>
+      <div class="card" id="statsFillCard"></div>
+      <h2 class="section-title">Par discipline</h2>
+      <div id="statsDisciplineList"></div>
+      <h2 class="section-title">Comparaison avec l'année précédente</h2>
+      <div class="card" id="statsYoyCard"></div>
+      <h2 class="section-title">Clients</h2>
+      <div class="card" id="statsClientsCard"></div>
+      <h2 class="section-title">Trésorerie</h2>
+      <div class="card" id="statsTresorerieCard"></div>
+    </section>
   </main>
 
   <button class="fab" id="fabBtn" onclick="fabAction()">+</button>
@@ -247,6 +266,7 @@
     <div class="tab" data-screen="depenses" onclick="switchScreen('depenses')"><span class="ic">🧾</span>Dépenses</div>
     <div class="tab" data-screen="caisse" onclick="switchScreen('caisse')"><span class="ic">🪙</span>Caisse</div>
     <div class="tab" data-screen="justificatifs" onclick="switchScreen('justificatifs')"><span class="ic">📷</span>Justif.</div>
+    <div class="tab" data-screen="stats" onclick="switchScreen('stats')"><span class="ic">📊</span>Stats</div>
   </nav>
 </div>
 
@@ -307,6 +327,7 @@ let settings = {
   iban: '',
   tvaMention: 'Non assujetti à la TVA (art. 10 LTVA)',
   conditions: 'Paiement à 30 jours, par virement bancaire.',
+  jourDisponibles: 180,
 };
 let caisseMouvements = []; // mouvements manuels uniquement (dépôts, retraits, solde initial)
 
@@ -325,18 +346,37 @@ const DEPENSES_CATEGORIES = [
   "Bureau/Administratif","Logiciels professionnels (SaaS)","Comptabilité/Fiduciaire",
   "Location de matériel (non refacturée client)","Frais de course (remontées/permis/hébergement)","Autre"
 ];
-const ACTIVITES = ["Ski de randonnée","Alpinisme","Escalade","Cascade de glace","Expédition","Trek","Formation/Cours","Via ferrata","Autre"];
+const ACTIVITES = ["Ski de randonnée","Alpinisme","Escalade","Cascade de glace","Canyoning","Expédition","Trek","Formation/Cours","Via ferrata","Autre"];
 
-/* Cycle de vie d'une course, dans l'ordre chronologique.
-   Un seul champ statut suit toute la vie de la réservation :
-   Demande -> Confirmée -> Effectuée -> Facturée -> Payée
-   avec Reportée / Annulée comme sorties possibles à tout moment. */
-const STATUTS = ["Demande","Confirmée","Effectuée","Facturée","Payée","Reportée","Annulée"];
+/* Cycle de vie d'une course, dans l'ordre chronologique :
+   Demande -> Confirmée -> À facturer -> (Reportée / Annulée en sortie).
+   « À facturer » signifie « la course a eu lieu ». La facturation et le
+   paiement, eux, ne sont plus des statuts de la course mais suivis
+   individuellement par participant (une course peut avoir plusieurs
+   clients, chacun avec sa propre avancée). */
+const STATUTS = ["Demande","Confirmée","À facturer","Reportée","Annulée"];
 const STATUT_BADGE = {
-  "Demande":"draft", "Confirmée":"confirmed", "Effectuée":"done",
-  "Facturée":"invoiced", "Payée":"paid", "Reportée":"postponed", "Annulée":"cancelled",
+  "Demande":"draft", "Confirmée":"confirmed", "À facturer":"done",
+  "Reportée":"postponed", "Annulée":"cancelled",
 };
 function isLiveStatut(s){ return s!=='Annulée'; } // compte dans le CA / éligible à facturer
+
+/* ---- Participants : une course peut être partagée entre plusieurs clients,
+   chacun avec sa part en %, son propre suivi facturation/paiement. ---- */
+function participantAmount(course, p){
+  return (Number(course.totalFacture)||0) * (Number(p.pct)||0) / 100;
+}
+function participantsList(course){
+  return Array.isArray(course.participants) ? course.participants : [];
+}
+function coursePaymentColor(course){
+  const ps = participantsList(course);
+  if(!ps.length) return null;
+  const paid = ps.filter(p=>p.paye).length;
+  if(paid===0) return 'red';
+  if(paid===ps.length) return 'green';
+  return 'orange';
+}
 
 /* ---- Stockage 100% local (IndexedDB) — rien n'est envoyé sur un serveur ----
    Toutes vos données (clients, courses, dépenses, factures, photos de
@@ -395,9 +435,43 @@ async function saveJSON(key, value){
 
 function uid(prefix){ return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
 
+/* ---- Migration : les courses enregistrées avant l'ajout des participants
+   multiples avaient un seul clientId/statut/modePaiement directement sur la
+   course. On les convertit une fois pour toutes vers le nouveau format
+   « participants », sans perdre aucune information. ---- */
+function migrateLegacyCourse(c){
+  if(Array.isArray(c.participants) && c.participants.length) {
+    // déjà au nouveau format ; on migre quand même un ancien statut résiduel
+    if(c.statut==='Effectuée' || c.statut==='Facturée' || c.statut==='Payée') c.statut = 'À facturer';
+    return c;
+  }
+  if(c.clientId){
+    const wasPaid = c.statut==='Payée';
+    const wasInvoiced = c.statut==='Facturée' || wasPaid;
+    c.participants = [{
+      clientId: c.clientId,
+      pct: (c.partPerso!=null ? Number(c.partPerso) : 100),
+      intituleCustom: '',
+      factureId: c.factureId || null,
+      paye: wasPaid,
+      datePaye: wasPaid ? (c.dateDebut||null) : null,
+      modePaiement: c.modePaiement || null,
+      dateFacturee: wasInvoiced ? (c.dateDebut||null) : null,
+    }];
+  } else {
+    c.participants = c.participants || [];
+  }
+  if(c.statut==='Effectuée' || c.statut==='Facturée' || c.statut==='Payée') c.statut = 'À facturer';
+  return c;
+}
+function migrateCourses(list){
+  return (list||[]).map(migrateLegacyCourse);
+}
+
 async function loadAll(){
   clients = await loadJSON(K_CLIENTS, []);
-  courses = await loadJSON(K_COURSES, []);
+  courses = migrateCourses(await loadJSON(K_COURSES, []));
+  await saveJSON(K_COURSES, courses); // persiste la migration pour ne la refaire qu'une fois
   depenses = await loadJSON(K_DEPENSES, []);
   factures = await loadJSON(K_FACTURES, []);
   caisseMouvements = await loadJSON(K_CAISSE, []);
@@ -408,6 +482,7 @@ async function loadAll(){
   renderDepenses();
   renderFactures();
   renderCaisse();
+  renderStatistiques();
   await refreshJustificatifIndex();
 }
 
@@ -416,8 +491,9 @@ function switchScreen(name){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById('screen-'+name).classList.add('active');
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active', t.dataset.screen===name));
-  document.getElementById('fabBtn').style.display = (name==='dashboard') ? 'none' : 'flex';
+  document.getElementById('fabBtn').style.display = (name==='dashboard' || name==='stats') ? 'none' : 'flex';
   currentTabScreen = name;
+  if(name==='stats') renderStatistiques();
 }
 let currentTabScreen = 'dashboard';
 
@@ -470,9 +546,12 @@ function clientName(c){
 }
 
 /* ============================= DASHBOARD ============================= */
+function courseNetTotal(c){
+  return participantsList(c).reduce((s,p)=>s+participantAmount(c,p),0);
+}
 function renderDashboard(){
   const yc = courses.filter(c=>c.dateDebut && new Date(c.dateDebut).getFullYear()===currentYear && isLiveStatut(c.statut));
-  const ca = yc.reduce((s,c)=>s+ (Number(c.totalFacture)||0) * (Number(c.partPerso)||100)/100, 0);
+  const ca = yc.reduce((s,c)=>s+courseNetTotal(c), 0);
   const yd = depenses.filter(d=>d.date && new Date(d.date).getFullYear()===currentYear);
   const totalDep = yd.reduce((s,d)=>s + (Number(d.montantDeductible)||0), 0);
   document.getElementById('kpiCA').textContent = fmtCHF(ca);
@@ -484,26 +563,30 @@ function renderDashboard(){
     titleEl.textContent = 'Encaissements ' + (new Date().getFullYear()===currentYear ? '(cette année)' : '('+currentYear+')');
   }
 
-  const paidThisYear = courses.filter(c=>c.statut==='Payée' && c.dateDebut && new Date(c.dateDebut).getFullYear()===currentYear);
-  const encaisseEspeces = paidThisYear.filter(c=>c.modePaiement==='Cash').reduce((s,c)=>s+(Number(c.totalFacture)||0),0);
-  const encaisseBanque = paidThisYear.filter(c=>c.modePaiement && c.modePaiement!=='Cash').reduce((s,c)=>s+(Number(c.totalFacture)||0),0);
-  const encaisseSansMode = paidThisYear.filter(c=>!c.modePaiement).reduce((s,c)=>s+(Number(c.totalFacture)||0),0);
+  let encaisseEspeces = 0, encaisseBanque = 0, encaisseSansMode = 0;
+  courses.filter(c=>c.dateDebut && new Date(c.dateDebut).getFullYear()===currentYear).forEach(c=>{
+    participantsList(c).filter(p=>p.paye).forEach(p=>{
+      const amt = participantAmount(c,p);
+      if(p.modePaiement==='Cash') encaisseEspeces += amt;
+      else if(p.modePaiement) encaisseBanque += amt;
+      else encaisseSansMode += amt;
+    });
+  });
   document.getElementById('encaissementsCard').innerHTML = `
     <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:4px 0;"><span style="flex:1; min-width:0;">💵 Espèces</span><strong style="white-space:nowrap;">${fmtCHF(encaisseEspeces)}</strong></div>
     <div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:4px 0;"><span style="flex:1; min-width:0;">🏦 Banque / Carte / TWINT</span><strong style="white-space:nowrap;">${fmtCHF(encaisseBanque)}</strong></div>
     ${encaisseSansMode>0 ? `<div style="display:flex; justify-content:space-between; align-items:baseline; gap:10px; padding:4px 0; color:var(--grey);"><span style="flex:1; min-width:0;">⚠ Sans mode renseigné</span><span style="white-space:nowrap;">${fmtCHF(encaisseSansMode)}</span></div>` : ''}
-    <div class="helper" style="text-align:center; margin-top:6px;">Montants bruts encaissés (avant part co-guidage) — à recouper avec votre relevé bancaire.</div>
+    <div class="helper" style="text-align:center; margin-top:6px;">Montants encaissés, part de chaque participant — à recouper avec votre relevé bancaire.</div>
   `;
 
   const todayISO0 = new Date().toISOString().slice(0,10);
   const yearAll = courses.filter(c=>c.dateDebut && new Date(c.dateDebut).getFullYear()===currentYear);
-  const netAmount = c => (Number(c.totalFacture)||0) * (Number(c.partPerso)||100)/100;
   const confirmedUpcoming = yearAll.filter(c=>c.statut==='Confirmée' && c.dateDebut>=todayISO0);
   const demandeUpcoming = yearAll.filter(c=>c.statut==='Demande' && c.dateDebut>=todayISO0);
   const joursConfirmesRestants = confirmedUpcoming.reduce((s,c)=>s+(Number(c.jours)||1),0);
-  const caConfirmeAVenir = confirmedUpcoming.reduce((s,c)=>s+netAmount(c),0);
-  const caEnDiscussion = demandeUpcoming.reduce((s,c)=>s+netAmount(c),0);
-  const joursEffectues = yearAll.filter(c=>['Effectuée','Facturée','Payée'].includes(c.statut)).reduce((s,c)=>s+(Number(c.jours)||1),0);
+  const caConfirmeAVenir = confirmedUpcoming.reduce((s,c)=>s+courseNetTotal(c),0);
+  const caEnDiscussion = demandeUpcoming.reduce((s,c)=>s+courseNetTotal(c),0);
+  const joursEffectues = yearAll.filter(c=>c.statut==='À facturer').reduce((s,c)=>s+(Number(c.jours)||1),0);
   const nbAnnulees = yearAll.filter(c=>c.statut==='Annulée').length;
   const nbReportees = yearAll.filter(c=>c.statut==='Reportée').length;
   const denom = yearAll.filter(c=>c.statut!=='Demande').length;
@@ -546,31 +629,36 @@ function relativeDayLabel(dateISO){
   return null;
 }
 function courseCardHTML(c){
-  const cl = clients.find(x=>x.id===c.clientId);
+  const ps = participantsList(c);
+  const names = ps.map(p=>{
+    const cl = clients.find(x=>x.id===p.clientId);
+    return cl ? clientName(cl) : null;
+  }).filter(Boolean);
   const badgeClass = STATUT_BADGE[c.statut] || 'pending';
   const total = (Number(c.totalFacture)||0);
   const rel = relativeDayLabel(c.dateDebut);
   const dateLabel = rel ? `<strong style="color:var(--gold);">${rel}</strong> · ${fmtDate(c.dateDebut)}` : fmtDate(c.dateDebut);
+  const payColor = coursePaymentColor(c);
   let quickActions = '';
-  if(c.statut==='Demande' || c.statut==='Confirmée'){
-    quickActions += `<button type="button" class="qa-inline" onclick="quickSetStatut(event,'${c.id}','Effectuée')">✓ Effectuée</button>`;
-  }
-  if(c.statut==='Effectuée' || c.statut==='Facturée'){
-    quickActions += `<button type="button" class="qa-inline" onclick="quickMarkPayee(event,'${c.id}')">💰 Payée</button>`;
-  }
   if(c.statut==='Demande'){
     quickActions += `<button type="button" class="qa-inline secondary" onclick="quickSetStatut(event,'${c.id}','Confirmée')">Confirmer</button>`;
+  }
+  if(c.statut==='Demande' || c.statut==='Confirmée'){
+    quickActions += `<button type="button" class="qa-inline" onclick="quickSetStatut(event,'${c.id}','À facturer')">✓ Course faite</button>`;
+  }
+  if(c.statut==='À facturer' && ps.some(p=>!p.paye)){
+    quickActions += `<button type="button" class="qa-inline" onclick="quickMarkPayeeMulti(event,'${c.id}')">💰 Marquer payé</button>`;
   }
   return `<div class="list-item" onclick="openCourseForm('${c.id}')">
     <div class="li-top">
       <div>
         <div class="li-title">${escapeHTML(c.lieu||'Course')}</div>
-        <div class="li-sub">${dateLabel} · ${escapeHTML(c.activite||'')} ${cl ? '· '+escapeHTML(clientName(cl)) : ''}</div>
+        <div class="li-sub">${dateLabel} · ${escapeHTML(c.activite||'')} ${names.length ? '· '+names.map(escapeHTML).join(', ') : ''}</div>
       </div>
       <div class="li-amount">${fmtCHF(total)}</div>
     </div>
     <span class="badge ${badgeClass}">${escapeHTML(c.statut||'—')}</span>
-    ${c.factureId && c.statut!=='Facturée' && c.statut!=='Payée' ? '<span class="badge invoiced" style="margin-left:6px;">📄 facturée</span>' : ''}
+    ${payColor ? `<span class="pay-dot ${payColor}"></span><span class="helper" style="display:inline;">${payColor==='green'?'tout payé':(payColor==='orange'?'paiement partiel':'rien payé')}</span>` : ''}
     ${quickActions}
   </div>`;
 }
@@ -583,26 +671,43 @@ async function quickSetStatut(event, courseId, newStatut){
   showToast('Course marquée « '+newStatut+' »');
   renderAgenda(); renderDashboard(); renderCaisse();
 }
-function quickMarkPayee(event, courseId){
+function quickMarkPayeeMulti(event, courseId){
   event.stopPropagation();
   const c = courses.find(x=>x.id===courseId);
   if(!c) return;
+  const unpaid = participantsList(c).filter(p=>!p.paye);
+  if(unpaid.length===0){ showToast('Tous les participants sont déjà payés'); return; }
+  if(unpaid.length===1){
+    openPaymentModePickerForParticipant(courseId, unpaid[0].clientId);
+    return;
+  }
+  const options = unpaid.map(p=>{
+    const cl = clients.find(x=>x.id===p.clientId);
+    return `<button class="btn btn-secondary" onclick="openPaymentModePickerForParticipant('${courseId}','${p.clientId}')">${cl?escapeHTML(clientName(cl)):'Client'} — ${fmtCHF(participantAmount(c,p))}</button>`;
+  }).join('');
+  openSheetHTML(`<h3>Qui a payé ?</h3>${options}`);
+}
+function openPaymentModePickerForParticipant(courseId, clientId){
+  const cl = clients.find(x=>x.id===clientId);
   openSheetHTML(`
     <h3>Mode de paiement</h3>
-    <div class="helper">Comment ${escapeHTML(c.lieu||'cette course')} a-t-elle été payée ?</div>
-    <button class="btn btn-primary" onclick="confirmPayee('${courseId}','Cash')">💵 Espèces</button>
-    <button class="btn btn-secondary" onclick="confirmPayee('${courseId}','Compte bancaire')">🏦 Virement bancaire</button>
-    <button class="btn btn-secondary" onclick="confirmPayee('${courseId}','TWINT')">📱 TWINT</button>
-    <button class="btn btn-secondary" onclick="confirmPayee('${courseId}','Carte')">💳 Carte</button>
+    <div class="helper">Comment ${cl?escapeHTML(clientName(cl)):'ce participant'} a-t-il payé ?</div>
+    <button class="btn btn-primary" onclick="confirmParticipantPayee('${courseId}','${clientId}','Cash')">💵 Espèces</button>
+    <button class="btn btn-secondary" onclick="confirmParticipantPayee('${courseId}','${clientId}','Compte bancaire')">🏦 Virement bancaire</button>
+    <button class="btn btn-secondary" onclick="confirmParticipantPayee('${courseId}','${clientId}','TWINT')">📱 TWINT</button>
+    <button class="btn btn-secondary" onclick="confirmParticipantPayee('${courseId}','${clientId}','Carte')">💳 Carte</button>
   `);
 }
-async function confirmPayee(courseId, mode){
-  const idx = courses.findIndex(c=>c.id===courseId);
-  if(idx<0) return;
-  courses[idx].statut = 'Payée';
-  courses[idx].modePaiement = mode;
+async function confirmParticipantPayee(courseId, clientId, mode){
+  const cIdx = courses.findIndex(x=>x.id===courseId);
+  if(cIdx<0) return;
+  const p = participantsList(courses[cIdx]).find(x=>x.clientId===clientId);
+  if(!p) return;
+  p.paye = true;
+  p.modePaiement = mode;
+  p.datePaye = new Date().toISOString().slice(0,10);
   await saveJSON(K_COURSES, courses);
-  closeSheet(); showToast('Marquée payée · '+mode);
+  closeSheet(); showToast('Marqué payé · '+mode);
   renderAgenda(); renderDashboard(); renderCaisse();
 }
 
@@ -626,27 +731,32 @@ function renderAgenda(){
 }
 
 let pendingCourseDraft = null;
+let formParticipants = [];
+let currentCourseFormId = '';
 
-function captureCourseFormDraft(originalId){
+function newParticipant(clientId){
+  return { clientId: clientId||'', pct: 100, intituleCustom: '', factureId: null, paye: false, datePaye: null, modePaiement: null, dateFacturee: null };
+}
+
+function captureCourseFormDraft(originalId, participantIndex){
   return {
     id: originalId || '',
     dateDebut: document.getElementById('f_dateDebut').value,
     dateFin: document.getElementById('f_dateFin').value,
     activite: document.getElementById('f_activite').value,
     lieu: document.getElementById('f_lieu').value,
-    clientId: document.getElementById('f_clientId').value,
     tarifJour: document.getElementById('f_tarif').value,
     montant: document.getElementById('f_montant').value,
     montantOverride: document.getElementById('f_montant').value.trim()!=='',
     transport: document.getElementById('f_transport').value,
     materiel: document.getElementById('f_materiel').value,
     statut: document.getElementById('f_statut').value,
-    modePaiement: document.getElementById('f_modePaiement').value,
-    partPerso: document.getElementById('f_partPerso').value,
+    participants: JSON.parse(JSON.stringify(formParticipants)),
+    pendingClientTargetIndex: participantIndex,
   };
 }
-function stashCourseDraftAndCreateClient(originalId){
-  pendingCourseDraft = captureCourseFormDraft(originalId);
+function stashCourseDraftAndCreateClient(originalId, participantIndex){
+  pendingCourseDraft = captureCourseFormDraft(originalId, participantIndex);
   closeSheet();
   openClientForm(null, true);
 }
@@ -656,48 +766,94 @@ function openCourseForm(id){
   renderCourseFormSheet(c);
 }
 function renderCourseFormSheet(c){
-  const clientOptions = clients.map(cl=>`<option value="${cl.id}" ${c&&c.clientId===cl.id?'selected':''}>${escapeHTML(clientName(cl))}</option>`).join('');
+  currentCourseFormId = c ? c.id : '';
+  formParticipants = (c && Array.isArray(c.participants) && c.participants.length)
+    ? JSON.parse(JSON.stringify(c.participants))
+    : [newParticipant('')];
   const activOptions = ACTIVITES.map(a=>`<option ${c&&c.activite===a?'selected':''}>${a}</option>`).join('');
   openSheetHTML(`
     <h3>${c? 'Modifier la course' : 'Nouvelle course'}</h3>
     <div class="row2">
-      <div><label>Date début</label><input type="date" id="f_dateDebut" value="${c?c.dateDebut:''}"></div>
-      <div><label>Date fin</label><input type="date" id="f_dateFin" value="${c?c.dateFin:''}"></div>
+      <div><label>Date début</label><input type="date" id="f_dateDebut" value="${c?c.dateDebut:''}" oninput="updateCourseCalc()"></div>
+      <div><label>Date fin</label><input type="date" id="f_dateFin" value="${c?c.dateFin:''}" oninput="updateCourseCalc()"></div>
     </div>
     <label>Type d'activité</label>
     <select id="f_activite"><option value="">—</option>${activOptions}</select>
     <label>Lieu / course</label>
     <input type="text" id="f_lieu" value="${c?escapeAttr(c.lieu):''}" placeholder="Ex. Intégrale de Peuterey">
-    <label>Client</label>
-    <select id="f_clientId"><option value="">— Sélectionner —</option>${clientOptions}</select>
-    <div class="helper">Pas encore dans la liste ? <a href="#" onclick="stashCourseDraftAndCreateClient('${c?c.id:''}'); return false;">Créer un client</a> — vos données déjà saisies seront conservées.</div>
     <div class="row2">
       <div><label>Tarif / jour (CHF)</label><input type="number" id="f_tarif" value="${c?c.tarifJour:''}" oninput="updateCourseCalc()"></div>
       <div><label>Montant prestation (CHF)</label><input type="number" id="f_montant" value="${c&&c.montantOverride?c.montant:''}" placeholder="auto (tarif × jours)" oninput="updateCourseCalc()"></div>
     </div>
-    <div class="helper">Laissez « Montant prestation » vide pour un calcul automatique (tarif × nb jours) qui se met à jour si vous changez le tarif ou les dates. Tapez un montant seulement pour un forfait fixe différent.</div>
+    <div class="helper">Laissez « Montant prestation » vide pour un calcul automatique (tarif × nb jours). Tapez un montant seulement pour un forfait fixe différent.</div>
     <div class="row2">
       <div><label>Frais transport (CHF)</label><input type="number" id="f_transport" value="${c&&c.transport?c.transport:0}" oninput="updateCourseCalc()"></div>
       <div><label>Frais matériel (CHF)</label><input type="number" id="f_materiel" value="${c&&c.materiel?c.materiel:0}" oninput="updateCourseCalc()"></div>
     </div>
-    <label>Statut de paiement</label>
+    <label>Statut</label>
     <select id="f_statut">
       ${STATUTS.map(s=>`<option ${c&&c.statut===s?'selected':(!c && s==='Demande'?'selected':'')}>${s}</option>`).join('')}
     </select>
-    <label>Mode de paiement (si payée)</label>
-    <select id="f_modePaiement">
-      <option value="">—</option>
-      ${["Cash","Compte bancaire","TWINT","Carte"].map(m=>`<option ${c&&c.modePaiement===m?'selected':''}>${m}</option>`).join('')}
-    </select>
-    <div class="helper">Un paiement en espèces alimente automatiquement votre Caisse.</div>
-    <label>Part personnelle (%) — co-guidage</label>
-    <input type="number" id="f_partPerso" value="${c?(c.partPerso??100):100}" oninput="updateCourseCalc()">
-    <div class="helper">100% si vous guidez seul. Réduisez si la course est partagée avec un autre guide — la facture au client reste inchangée, seule votre comptabilité personnelle est ajustée.</div>
     <div class="calc-readout" id="courseCalcBox"></div>
+
+    <label style="margin-top:20px;">Participant(s) et répartition</label>
+    <div class="helper">Une course peut être partagée entre plusieurs clients (ex. co-inscrits sur une haute route). Chacun a sa part et sera facturé séparément.</div>
+    <div id="participantsBox"></div>
+
     <button class="btn btn-primary" onclick="saveCourse('${c?c.id:''}')">Enregistrer</button>
     ${c? '<button class="btn btn-danger" onclick="deleteCourse(\''+c.id+'\')">Supprimer cette course</button>' : ''}
   `);
+  renderParticipantsBox();
   updateCourseCalc();
+}
+
+function renderParticipantsBox(){
+  const box = document.getElementById('participantsBox');
+  if(!box) return;
+  const totalPct = formParticipants.reduce((s,p)=>s+(toNum(p.pct)||0),0);
+  const clientOptionsFor = (selectedId) => clients.map(cl=>
+    `<option value="${cl.id}" ${selectedId===cl.id?'selected':''}>${escapeHTML(clientName(cl))}</option>`
+  ).join('');
+  box.innerHTML = formParticipants.map((p,i)=>`
+    <div class="participant-row">
+      <div class="row2">
+        <div>
+          <label style="margin-top:0;">Client</label>
+          <select onchange="updateParticipantField(${i},'clientId',this.value)">
+            <option value="">— Sélectionner —</option>${clientOptionsFor(p.clientId)}
+          </select>
+        </div>
+        <div>
+          <label style="margin-top:0;">Part (%)</label>
+          <input type="number" value="${p.pct}" oninput="updateParticipantField(${i},'pct',this.value); updateCourseCalc();">
+        </div>
+      </div>
+      <div class="helper">Pas dans la liste ? <a href="#" onclick="stashCourseDraftAndCreateClient('${currentCourseFormId}', ${i}); return false;">Créer ce client</a></div>
+      <label style="margin-top:8px;">Intitulé personnalisé sur facture (optionnel)</label>
+      <input type="text" value="${escapeAttr(p.intituleCustom||'')}" placeholder="Ex. Prestation guide pour prise de vue" oninput="updateParticipantField(${i},'intituleCustom',this.value)">
+      ${p.paye ? `<div class="helper" style="color:var(--green);">✓ Payé${p.modePaiement?' · '+escapeHTML(p.modePaiement):''}${p.datePaye?' · '+fmtDate(p.datePaye):''}</div>`
+        : (p.factureId ? `<div class="helper" style="color:var(--gold);">📄 Facturé, en attente de paiement</div>` : '')}
+      ${formParticipants.length>1 ? `<button type="button" class="btn btn-danger" style="margin-top:8px;" onclick="removeParticipant(${i})">Retirer ce participant</button>` : ''}
+    </div>
+  `).join('') + `
+    <div class="helper" style="text-align:right; ${Math.round(totalPct)!==100?'color:var(--red);':''}">Total : ${totalPct}%${Math.round(totalPct)!==100?' ⚠ ne totalise pas 100%':''}</div>
+    <button type="button" class="btn btn-secondary" onclick="addParticipant()">+ Ajouter un participant</button>
+  `;
+}
+function addParticipant(){
+  formParticipants.push(newParticipant(''));
+  renderParticipantsBox();
+  updateCourseCalc();
+}
+function removeParticipant(i){
+  formParticipants.splice(i,1);
+  renderParticipantsBox();
+  updateCourseCalc();
+}
+function updateParticipantField(i, field, value){
+  if(!formParticipants[i]) return;
+  formParticipants[i][field] = value;
+  if(field==='clientId' || field==='pct') updateCourseCalc();
 }
 
 function toNum(v){
@@ -718,15 +874,20 @@ function updateCourseCalc(){
   const transport = toNum(document.getElementById('f_transport').value);
   const materiel = toNum(document.getElementById('f_materiel').value);
   const total = prestation + transport + materiel;
-  const part = toNum(document.getElementById('f_partPerso').value) || 100;
-  const net = total * part/100;
-  document.getElementById('courseCalcBox').innerHTML = `
+  let rows = '';
+  formParticipants.forEach(p=>{
+    const cl = clients.find(x=>x.id===p.clientId);
+    const amt = total * (toNum(p.pct)||0)/100;
+    rows += `<div class="row"><span>${cl?escapeHTML(clientName(cl)):'(client à choisir)'} (${p.pct||0}%)</span><span>${fmtCHF(amt)}</span></div>`;
+  });
+  const box = document.getElementById('courseCalcBox');
+  if(box) box.innerHTML = `
     <div class="row"><span>Nb jours</span><span>${jours}</span></div>
     <div class="row"><span>Prestation</span><span>${fmtCHF(prestation)}</span></div>
     <div class="row"><span>+ Transport</span><span>${fmtCHF(transport)}</span></div>
     <div class="row"><span>+ Matériel</span><span>${fmtCHF(materiel)}</span></div>
-    <div class="row total"><span>Total facturé au client</span><span>${fmtCHF(total)}</span></div>
-    ${part<100 ? `<div class="row" style="color:var(--gold-dark,#8a6c3f)"><span>Votre part (${part}%)</span><span>${fmtCHF(net)}</span></div>` : ''}
+    <div class="row total"><span>Total facturé (tous participants)</span><span>${fmtCHF(total)}</span></div>
+    ${rows}
   `;
 }
 
@@ -742,17 +903,30 @@ async function saveCourse(id){
   const transport = toNum(document.getElementById('f_transport').value);
   const materiel = toNum(document.getElementById('f_materiel').value);
   const total = prestation + transport + materiel;
+
+  const cleanParticipants = formParticipants
+    .filter(p=>p.clientId)
+    .map(p=>({
+      clientId: p.clientId,
+      pct: toNum(p.pct)||0,
+      intituleCustom: (p.intituleCustom||'').trim(),
+      factureId: p.factureId||null,
+      paye: !!p.paye,
+      datePaye: p.datePaye||null,
+      modePaiement: p.modePaiement||null,
+      dateFacturee: p.dateFacturee||null,
+    }));
+  if(cleanParticipants.length===0){ showToast('Ajoutez au moins un participant avec un client sélectionné'); return; }
+
   const data = {
     id: id || uid('crs_'),
     dateDebut: d1, dateFin: d2, jours,
     activite: document.getElementById('f_activite').value,
     lieu: document.getElementById('f_lieu').value,
-    clientId: document.getElementById('f_clientId').value,
     tarifJour: tarif, montant: prestation, montantOverride: isOverride,
     transport, materiel, totalFacture: total,
     statut: document.getElementById('f_statut').value,
-    modePaiement: document.getElementById('f_modePaiement').value,
-    partPerso: toNum(document.getElementById('f_partPerso').value) || 100,
+    participants: cleanParticipants,
   };
   const idx = courses.findIndex(c=>c.id===data.id);
   if(idx>=0) courses[idx]=data; else courses.push(data);
@@ -829,7 +1003,9 @@ async function saveClient(id){
   if(pendingCourseDraft){
     const draft = pendingCourseDraft;
     pendingCourseDraft = null;
-    draft.clientId = data.id;
+    if(draft.pendingClientTargetIndex!=null && draft.participants && draft.participants[draft.pendingClientTargetIndex]){
+      draft.participants[draft.pendingClientTargetIndex].clientId = data.id;
+    }
     closeSheet();
     showToast('Client créé — reprise de votre course en cours');
     renderCourseFormSheet(draft);
@@ -938,29 +1114,36 @@ function nextFactureNumero(year){
   const n = factures.filter(f=>f.numero.startsWith(String(year)+'-')).length + 1;
   return year + '-' + String(n).padStart(3,'0');
 }
-function courseAmount(c){ return Number(c.totalFacture)||0; }
 
 function renderFactures(){
   const box = document.getElementById('facturesList');
   const list = [...factures].sort((a,b)=>new Date(b.date)-new Date(a.date));
   box.innerHTML = list.length ? list.map(f=>{
-    const cl = clients.find(x=>x.id===f.clientId);
+    let subLabel;
+    if(f.manual){
+      subLabel = (f.clientLibre&&f.clientLibre.nom ? escapeHTML(f.clientLibre.nom) : 'Facture libre') + ' · ' + (f.lines?f.lines.length:0) + ' ligne(s)';
+    } else {
+      const cl = clients.find(x=>x.id===f.clientId);
+      subLabel = (cl?escapeHTML(clientName(cl)):'Client supprimé') + ' · ' + (f.lines?f.lines.length:0) + ' course(s)';
+    }
     return `<div class="list-item" onclick="viewFacture('${f.id}')">
       <div class="li-top">
         <div>
           <div class="li-title">Facture ${escapeHTML(f.numero)}</div>
-          <div class="li-sub">${fmtDate(f.date)} · ${cl?escapeHTML(clientName(cl)):'Client supprimé'} · ${f.courseIds.length} course(s)</div>
+          <div class="li-sub">${fmtDate(f.date)} · ${subLabel}</div>
         </div>
         <div class="li-amount">${fmtCHF(f.total)}</div>
       </div>
     </div>`;
-  }).join('') : emptyState('📄', "Aucune facture. Touchez + pour regrouper une ou plusieurs courses d'un même client.");
+  }).join('') : emptyState('📄', "Aucune facture. Touchez + pour regrouper une ou plusieurs courses d'un même client, ou créez une facture libre.");
 }
 
+/* ---- Facture depuis l'Agenda (par participant) ---- */
 function openFactureForm(){
   const clientOptions = clients.map(c=>`<option value="${c.id}">${escapeHTML(clientName(c))}</option>`).join('');
   openSheetHTML(`
     <h3>Nouvelle facture</h3>
+    <div class="helper"><a href="#" onclick="openFactureLibreForm(); return false;">Besoin d'une facture 100% manuelle à la place ?</a></div>
     <label>Client</label>
     <select id="f_factureClient" onchange="renderFactureCourseChecklist()"><option value="">— Sélectionner —</option>${clientOptions}</select>
     <div id="factureCourseChecklist" style="margin-top:14px;"></div>
@@ -969,9 +1152,19 @@ function openFactureForm(){
   `);
 }
 
-function eligibleCoursesForClient(clientId){
-  return courses.filter(c => c.clientId===clientId && isLiveStatut(c.statut) && !c.factureId)
-    .sort((a,b)=>new Date(b.dateDebut)-new Date(a.dateDebut));
+/* Renvoie, pour un client donné, chaque (course, participant) pas encore
+   facturé — c'est l'unité facturable de base maintenant qu'une course peut
+   être partagée entre plusieurs clients. */
+function eligibleEntriesForClient(clientId){
+  const out = [];
+  courses.filter(c=>isLiveStatut(c.statut)).forEach(c=>{
+    participantsList(c).forEach(p=>{
+      if(p.clientId===clientId && !p.factureId){
+        out.push({course:c, participant:p});
+      }
+    });
+  });
+  return out.sort((a,b)=>new Date(b.course.dateDebut)-new Date(a.course.dateDebut));
 }
 
 function renderFactureCourseChecklist(){
@@ -980,32 +1173,33 @@ function renderFactureCourseChecklist(){
   const totalBox = document.getElementById('factureTotalBox');
   const genBtn = document.getElementById('factureGenBtn');
   if(!clientId){ box.innerHTML=''; totalBox.style.display='none'; genBtn.style.display='none'; return; }
-  const list = eligibleCoursesForClient(clientId);
+  const list = eligibleEntriesForClient(clientId);
   if(!list.length){
     box.innerHTML = '<div class="helper">Ce client n\'a aucune course disponible à facturer (déjà facturées ou annulées).</div>';
     totalBox.style.display='none'; genBtn.style.display='none';
     return;
   }
-  box.innerHTML = '<label>Courses à inclure</label>' + list.map(c=>`
+  box.innerHTML = '<label>Courses à inclure</label>' + list.map(({course:c,participant:p})=>`
     <label style="display:flex; align-items:center; gap:10px; font-weight:400; font-size:14px; padding:10px 0; border-bottom:1px solid var(--grey-line);">
-      <input type="checkbox" class="facture-course-chk" value="${c.id}" checked onchange="updateFactureTotal()" style="width:18px; height:18px;">
-      <span style="flex:1;">${fmtDate(c.dateDebut)} · ${escapeHTML(c.lieu||c.activite||'Course')}</span>
-      <span style="font-weight:700;">${fmtCHF(courseAmount(c))}</span>
+      <input type="checkbox" class="facture-course-chk" value="${c.id}|${p.clientId}" checked onchange="updateFactureTotal()" style="width:18px; height:18px;">
+      <span style="flex:1;">${fmtDate(c.dateDebut)} · ${escapeHTML(p.intituleCustom || c.lieu || c.activite || 'Course')}${participantsList(c).length>1?' ('+p.pct+'%)':''}</span>
+      <span style="font-weight:700;">${fmtCHF(participantAmount(c,p))}</span>
     </label>
   `).join('');
   genBtn.style.display = 'block';
   updateFactureTotal();
 }
 function updateFactureTotal(){
-  const clientId = document.getElementById('f_factureClient').value;
   const checked = Array.from(document.querySelectorAll('.facture-course-chk:checked')).map(el=>el.value);
-  const total = checked.reduce((s,id)=>{
-    const c = courses.find(x=>x.id===id);
-    return s + (c?courseAmount(c):0);
+  const total = checked.reduce((s,key)=>{
+    const [courseId, clientId] = key.split('|');
+    const c = courses.find(x=>x.id===courseId);
+    const p = c ? participantsList(c).find(x=>x.clientId===clientId) : null;
+    return s + (p ? participantAmount(c,p) : 0);
   }, 0);
   const totalBox = document.getElementById('factureTotalBox');
   totalBox.style.display = checked.length ? 'block' : 'none';
-  totalBox.innerHTML = `<div class="row total"><span>${checked.length} course(s) sélectionnée(s)</span><span>${fmtCHF(total)}</span></div>`;
+  totalBox.innerHTML = `<div class="row total"><span>${checked.length} ligne(s) sélectionnée(s)</span><span>${fmtCHF(total)}</span></div>`;
 }
 
 async function generateFacture(){
@@ -1014,8 +1208,17 @@ async function generateFacture(){
   const checked = Array.from(document.querySelectorAll('.facture-course-chk:checked')).map(el=>el.value);
   if(!clientId || checked.length===0){ if(preOpenedWin) preOpenedWin.close(); showToast('Sélectionnez au moins une course'); return; }
   const cl = clients.find(x=>x.id===clientId);
-  const selectedCourses = checked.map(id=>courses.find(c=>c.id===id)).filter(Boolean);
-  const total = selectedCourses.reduce((s,c)=>s+courseAmount(c), 0);
+
+  const pairs = checked.map(key=>{
+    const [courseId, cid] = key.split('|');
+    return {courseId, clientId: cid};
+  });
+  const total = pairs.reduce((s,{courseId,clientId})=>{
+    const c = courses.find(x=>x.id===courseId);
+    const p = c ? participantsList(c).find(x=>x.clientId===clientId) : null;
+    return s + (p ? participantAmount(c,p) : 0);
+  }, 0);
+
   const year = new Date().getFullYear();
   const numero = nextFactureNumero(year);
   const factureId = uid('fac_');
@@ -1023,31 +1226,42 @@ async function generateFacture(){
   const facture = {
     id: factureId, numero, clientId, date: dateFacture,
     echeance: new Date(Date.now()+30*86400000).toISOString().slice(0,10),
-    courseIds: checked, total,
+    lines: pairs, total,
   };
   factures.push(facture);
   await saveJSON(K_FACTURES, factures);
 
-  // marquer les courses comme facturées (empêche de les refacturer par erreur)
-  checked.forEach(id=>{
-    const idx = courses.findIndex(c=>c.id===id);
-    if(idx>=0){
-      courses[idx].factureId = factureId;
-      if(courses[idx].statut!=='Payée') courses[idx].statut = 'Facturée';
-    }
+  // marquer les participants concernés comme facturés (empêche de les refacturer par erreur)
+  pairs.forEach(({courseId,clientId})=>{
+    const cIdx = courses.findIndex(x=>x.id===courseId);
+    if(cIdx<0) return;
+    const p = participantsList(courses[cIdx]).find(x=>x.clientId===clientId);
+    if(p){ p.factureId = factureId; p.dateFacturee = dateFacture; }
   });
   await saveJSON(K_COURSES, courses);
 
   closeSheet(); showToast('Facture '+numero+' générée');
   renderFactures(); renderAgenda(); renderDashboard();
-  exportFacturePDF(facture, cl, selectedCourses, preOpenedWin);
+  exportFacturePDF(facture, cl, preOpenedWin);
 }
 
 async function viewFacture(id){
   const f = factures.find(x=>x.id===id);
   if(!f) return;
+  if(f.manual){
+    openSheetHTML(`
+      <h3>Facture ${escapeHTML(f.numero)}</h3>
+      <div class="calc-readout">
+        <div class="row"><span>Client</span><span>${f.clientLibre?escapeHTML(f.clientLibre.nom):'—'}</span></div>
+        <div class="row"><span>Date</span><span>${fmtDate(f.date)}</span></div>
+        <div class="row"><span>Échéance</span><span>${fmtDate(f.echeance)}</span></div>
+        <div class="row total"><span>Total</span><span>${fmtCHF(f.total)}</span></div>
+      </div>
+      <button class="btn btn-primary" onclick="reopenFacturePDF('${f.id}')">📄 Régénérer le PDF</button>
+    `);
+    return;
+  }
   const cl = clients.find(x=>x.id===f.clientId);
-  const list = f.courseIds.map(id=>courses.find(c=>c.id===id)).filter(Boolean);
   openSheetHTML(`
     <h3>Facture ${escapeHTML(f.numero)}</h3>
     <div class="calc-readout">
@@ -1063,12 +1277,35 @@ async function viewFacture(id){
 function reopenFacturePDF(factureId){
   const preOpenedWin = window.open('', '_blank');
   const f = factures.find(x=>x.id===factureId);
+  if(!f) return;
+  if(f.manual){
+    exportFactureLibrePDF(f, preOpenedWin);
+    return;
+  }
   const cl = clients.find(x=>x.id===f.clientId);
-  const list = f.courseIds.map(id=>courses.find(c=>c.id===id)).filter(Boolean);
-  exportFacturePDF(f, cl, list, preOpenedWin);
+  exportFacturePDF(f, cl, preOpenedWin);
 }
 
-async function exportFacturePDF(facture, client, selectedCourses, preOpenedWin){
+/* Résout les lignes d'une facture (Agenda) à partir des données actuelles
+   des courses/participants — utilisé aussi bien à la génération qu'à la
+   régénération, pour toujours refléter l'état présent. */
+function resolveFactureLines(facture){
+  return (facture.lines||[]).map(({courseId,clientId})=>{
+    const c = courses.find(x=>x.id===courseId);
+    if(!c) return null;
+    const p = participantsList(c).find(x=>x.clientId===clientId);
+    if(!p) return null;
+    return {
+      date: c.dateDebut,
+      description: p.intituleCustom || (c.lieu || c.activite || 'Course'),
+      jours: c.jours || 1,
+      tarifJour: c.tarifJour || 0,
+      montant: participantAmount(c,p),
+    };
+  }).filter(Boolean);
+}
+
+async function exportFacturePDF(facture, client, preOpenedWin){
   const win = preOpenedWin || window.open('', '_blank');
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:'mm', format:'a4'});
@@ -1091,11 +1328,13 @@ async function exportFacturePDF(facture, client, selectedCourses, preOpenedWin){
   doc.setFont('helvetica','normal'); doc.setFontSize(10);
   let y = 48;
   if(client){
-    if(client.entreprise){ doc.text(client.entreprise, 15, y); y+=5; doc.setFontSize(9); doc.text("À l'att. de "+client.prenom+' '+client.nom, 15, y); doc.setFontSize(10); y+=5; }
-    else { doc.text(client.prenom+' '+client.nom, 15, y); y+=5; }
+    if(client.entreprise){ doc.text(client.entreprise, 15, y); y+=5; doc.setFontSize(9); doc.text("À l'att. de "+(client.prenom||'')+' '+(client.nom||''), 15, y); doc.setFontSize(10); y+=5; }
+    else { doc.text((client.prenom||'')+' '+(client.nom||''), 15, y); y+=5; }
     if(client.adresse){ doc.text(client.adresse, 15, y); y+=5; }
     if(client.email){ doc.text(client.email, 15, y); y+=5; }
   }
+
+  const lines = resolveFactureLines(facture);
 
   let ty = 68;
   doc.setFillColor(...NAVY); doc.rect(15, ty, 180, 8, 'F');
@@ -1108,17 +1347,15 @@ async function exportFacturePDF(facture, client, selectedCourses, preOpenedWin){
   ty += 8;
   doc.setTextColor(...NAVY); doc.setFont('helvetica','normal'); doc.setFontSize(9);
   let rowN = 0;
-  for(const c of selectedCourses){
+  for(const l of lines){
     if(ty>265){ doc.addPage(); ty=20; }
     if(rowN%2===0){ doc.setFillColor(...CREAM); doc.rect(15,ty,180,7,'F'); }
-    doc.text(fmtDate(c.dateDebut), 18, ty+5);
-    doc.text((c.lieu||c.activite||'Course').slice(0,38), 42, ty+5);
-    doc.text(String(c.jours||1), 122, ty+5);
-    doc.text(fmtCHF(c.tarifJour||0), 138, ty+5);
-    doc.text(fmtCHF(courseAmount(c)), 190, ty+5, {align:'right'});
+    doc.text(fmtDate(l.date), 18, ty+5);
+    doc.text(String(l.description).slice(0,38), 42, ty+5);
+    doc.text(String(l.jours), 122, ty+5);
+    doc.text(fmtCHF(l.tarifJour), 138, ty+5);
+    doc.text(fmtCHF(l.montant), 190, ty+5, {align:'right'});
     ty += 7; rowN++;
-    if(c.transport){ doc.setFontSize(8); doc.setTextColor(107,114,128); doc.text('   + Transport', 42, ty+4); doc.text(fmtCHF(c.transport), 190, ty+4, {align:'right'}); doc.setFontSize(9); doc.setTextColor(...NAVY); ty+=6; }
-    if(c.materiel){ doc.setFontSize(8); doc.setTextColor(107,114,128); doc.text('   + Matériel', 42, ty+4); doc.text(fmtCHF(c.materiel), 190, ty+4, {align:'right'}); doc.setFontSize(9); doc.setTextColor(...NAVY); ty+=6; }
   }
 
   ty += 4;
@@ -1140,7 +1377,156 @@ async function exportFacturePDF(facture, client, selectedCourses, preOpenedWin){
   doc.setFontSize(8); doc.setTextColor(150,150,150);
   doc.text('Merci de votre confiance — '+settings.nom+', '+settings.titre, 15, ty);
 
-  // ---- QR-facture suisse (page dédiée, format officiel bande de paiement) ----
+  try{
+    await addSwissQRPaymentSlip(doc, facture, client);
+  }catch(e){
+    console.error('QR-facture non générée', e);
+  }
+
+  const blob = doc.output('blob');
+  const url = URL.createObjectURL(blob);
+  if(win){
+    win.location.href = url;
+  } else {
+    openSheetHTML(`
+      <h3>PDF prêt</h3>
+      <div class="helper">Votre navigateur a bloqué l'ouverture automatique. Touchez le lien ci-dessous pour ouvrir la facture.</div>
+      <a href="${url}" target="_blank" class="btn btn-primary" style="text-decoration:none; display:block;">📄 Ouvrir la facture ${escapeHTML(facture.numero)}</a>
+    `);
+  }
+}
+
+/* ---- Facture libre : 100% manuelle, comme dans le classeur Excel — pour
+   les cas particuliers (intitulé imposé par une entreprise, forfait
+   spécial) sans lien avec l'Agenda. ---- */
+let factureLibreLines = [];
+function openFactureLibreForm(){
+  factureLibreLines = [{date:new Date().toISOString().slice(0,10), description:'', montant:''}];
+  openSheetHTML(`
+    <h3>Facture libre</h3>
+    <div class="helper">Entièrement manuelle — utile quand l'intitulé ou le montant ne doit pas venir d'une course de l'Agenda (ex. « Prestation guide pour prise de vue »).</div>
+    <label>Nom du client / de l'entreprise</label>
+    <input type="text" id="f_libreNom">
+    <label>Adresse</label>
+    <input type="text" id="f_libreAdresse">
+    <label style="margin-top:16px;">Lignes de la facture</label>
+    <div id="libreLinesBox"></div>
+    <div class="calc-readout" id="libreTotalBox"></div>
+    <button class="btn btn-primary" onclick="generateFactureLibre()">Générer la facture (PDF)</button>
+  `);
+  renderLibreLines();
+}
+function renderLibreLines(){
+  const box = document.getElementById('libreLinesBox');
+  if(!box) return;
+  box.innerHTML = factureLibreLines.map((l,i)=>`
+    <div class="participant-row">
+      <label style="margin-top:0;">Date</label>
+      <input type="date" value="${l.date}" oninput="updateLibreLine(${i},'date',this.value)">
+      <label>Description</label>
+      <input type="text" value="${escapeAttr(l.description)}" placeholder="Ex. Prestation guide pour prise de vue" oninput="updateLibreLine(${i},'description',this.value)">
+      <label>Montant (CHF)</label>
+      <input type="number" value="${l.montant}" oninput="updateLibreLine(${i},'montant',this.value); updateLibreTotal();">
+      ${factureLibreLines.length>1 ? `<button type="button" class="btn btn-danger" style="margin-top:8px;" onclick="removeLibreLine(${i})">Retirer cette ligne</button>` : ''}
+    </div>
+  `).join('') + `<button type="button" class="btn btn-secondary" onclick="addLibreLine()">+ Ajouter une ligne</button>`;
+  updateLibreTotal();
+}
+function addLibreLine(){ factureLibreLines.push({date:new Date().toISOString().slice(0,10), description:'', montant:''}); renderLibreLines(); }
+function removeLibreLine(i){ factureLibreLines.splice(i,1); renderLibreLines(); }
+function updateLibreLine(i, field, value){ if(factureLibreLines[i]) factureLibreLines[i][field] = value; }
+function updateLibreTotal(){
+  const total = factureLibreLines.reduce((s,l)=>s+toNum(l.montant),0);
+  const box = document.getElementById('libreTotalBox');
+  if(box) box.innerHTML = `<div class="row total"><span>Total</span><span>${fmtCHF(total)}</span></div>`;
+}
+async function generateFactureLibre(){
+  const preOpenedWin = window.open('', '_blank');
+  const nom = document.getElementById('f_libreNom').value.trim();
+  const adresse = document.getElementById('f_libreAdresse').value.trim();
+  const validLines = factureLibreLines
+    .filter(l=>l.description.trim()!=='' || toNum(l.montant)>0)
+    .map(l=>({date:l.date, description:l.description.trim(), montant:toNum(l.montant)}));
+  if(!nom || validLines.length===0){ if(preOpenedWin) preOpenedWin.close(); showToast('Indiquez un client et au moins une ligne'); return; }
+  const total = validLines.reduce((s,l)=>s+l.montant,0);
+  const year = new Date().getFullYear();
+  const numero = nextFactureNumero(year);
+  const facture = {
+    id: uid('fac_'), numero, date: new Date().toISOString().slice(0,10),
+    echeance: new Date(Date.now()+30*86400000).toISOString().slice(0,10),
+    manual: true, clientLibre: {nom, adresse}, lines: validLines, total,
+  };
+  factures.push(facture);
+  await saveJSON(K_FACTURES, factures);
+  closeSheet(); showToast('Facture '+numero+' générée');
+  renderFactures();
+  exportFactureLibrePDF(facture, preOpenedWin);
+}
+async function exportFactureLibrePDF(facture, preOpenedWin){
+  const win = preOpenedWin || window.open('', '_blank');
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:'mm', format:'a4'});
+  const NAVY = [31,42,55], GOLD = [176,141,87], CREAM = [243,236,221];
+  const client = facture.clientLibre ? {prenom:'', nom: facture.clientLibre.nom, entreprise:'', adresse: facture.clientLibre.adresse} : null;
+
+  doc.setFillColor(...NAVY); doc.rect(0,0,210,32,'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.setTextColor(...GOLD);
+  doc.text(settings.nom, 15, 15);
+  doc.setFontSize(9); doc.setTextColor(230,230,230);
+  doc.text(settings.titre, 15, 21);
+  doc.setFontSize(20); doc.setTextColor(255,255,255);
+  doc.text('FACTURE', 195, 15, {align:'right'});
+  doc.setFontSize(10); doc.setTextColor(...GOLD);
+  doc.text('N° '+facture.numero, 195, 22, {align:'right'});
+  doc.setFontSize(8.5); doc.setTextColor(220,220,220);
+  doc.text('Date : '+fmtDate(facture.date)+'   ·   Échéance : '+fmtDate(facture.echeance), 195, 27, {align:'right'});
+
+  doc.setTextColor(...NAVY); doc.setFont('helvetica','bold'); doc.setFontSize(9);
+  doc.text('FACTURÉ À', 15, 42);
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  let y = 48;
+  if(facture.clientLibre){
+    doc.text(facture.clientLibre.nom||'', 15, y); y+=5;
+    if(facture.clientLibre.adresse){ doc.text(facture.clientLibre.adresse, 15, y); y+=5; }
+  }
+
+  let ty = 68;
+  doc.setFillColor(...NAVY); doc.rect(15, ty, 180, 8, 'F');
+  doc.setTextColor(255,255,255); doc.setFontSize(8.5); doc.setFont('helvetica','bold');
+  doc.text('Date', 18, ty+5.5);
+  doc.text('Description', 60, ty+5.5);
+  doc.text('Montant', 190, ty+5.5, {align:'right'});
+  ty += 8;
+  doc.setTextColor(...NAVY); doc.setFont('helvetica','normal'); doc.setFontSize(9);
+  let rowN = 0;
+  for(const l of (facture.lines||[])){
+    if(ty>265){ doc.addPage(); ty=20; }
+    if(rowN%2===0){ doc.setFillColor(...CREAM); doc.rect(15,ty,180,7,'F'); }
+    doc.text(fmtDate(l.date), 18, ty+5);
+    doc.text(String(l.description).slice(0,55), 60, ty+5);
+    doc.text(fmtCHF(l.montant), 190, ty+5, {align:'right'});
+    ty += 7; rowN++;
+  }
+
+  ty += 4;
+  doc.setDrawColor(...GOLD); doc.setLineWidth(0.6); doc.line(15, ty, 195, ty);
+  ty += 8;
+  doc.setFontSize(9); doc.setTextColor(107,114,128);
+  doc.text(settings.tvaMention, 15, ty);
+
+  doc.setFillColor(...CREAM); doc.rect(130, ty-6, 65, 12, 'F');
+  doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(...NAVY);
+  doc.text('TOTAL', 135, ty+1.5);
+  doc.setFontSize(13);
+  doc.text(fmtCHF(facture.total), 192, ty+1.5, {align:'right'});
+
+  ty += 14;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...NAVY);
+  doc.text(settings.conditions, 15, ty);
+  ty += 8;
+  doc.setFontSize(8); doc.setTextColor(150,150,150);
+  doc.text('Merci de votre confiance — '+settings.nom+', '+settings.titre, 15, ty);
+
   try{
     await addSwissQRPaymentSlip(doc, facture, client);
   }catch(e){
@@ -1261,6 +1647,9 @@ function openReglagesForm(){
     <input type="text" id="f_setTva" value="${escapeAttr(settings.tvaMention)}">
     <label>Conditions de paiement</label>
     <input type="text" id="f_setConditions" value="${escapeAttr(settings.conditions)}">
+    <label>Jours guidables disponibles par saison</label>
+    <input type="number" id="f_setJours" value="${settings.jourDisponibles??180}">
+    <div class="helper">Utilisé dans l'onglet Statistiques pour calculer votre taux de remplissage (jours vendus / jours disponibles).</div>
     <button class="btn btn-primary" onclick="saveReglages()">Enregistrer</button>
 
     <h3 style="margin-top:28px;">Sauvegarde de vos données</h3>
@@ -1281,9 +1670,11 @@ async function saveReglages(){
     iban: document.getElementById('f_setIban').value.trim(),
     tvaMention: document.getElementById('f_setTva').value.trim(),
     conditions: document.getElementById('f_setConditions').value.trim(),
+    jourDisponibles: toNum(document.getElementById('f_setJours').value) || 180,
   };
   await saveJSON(K_SETTINGS, settings);
   closeSheet(); showToast('Réglages enregistrés');
+  renderStatistiques();
 }
 
 /* ---- Sauvegarde complète : indispensable car les données restent liées à
@@ -1332,7 +1723,7 @@ async function handleImportFile(){
   }
   try{
     clients = backup.clients || [];
-    courses = backup.courses || [];
+    courses = migrateCourses(backup.courses || []);
     depenses = backup.depenses || [];
     factures = backup.factures || [];
     caisseMouvements = backup.caisseMouvements || [];
@@ -1445,6 +1836,133 @@ function generateSwissQRDataUrl(payload){
   });
 }
 
+/* ============================= STATISTIQUES ============================= */
+function computeDisciplineStats(year){
+  const map = {};
+  courses.filter(c=>c.dateDebut && new Date(c.dateDebut).getFullYear()===year).forEach(c=>{
+    const disc = c.activite || 'Autre';
+    if(!map[disc]) map[disc] = {jours:0, ca:0, encaisse:0, nbCourses:0, nbAnnulees:0, nbTotal:0, coGuidage:0, delais:[]};
+    map[disc].nbTotal += 1;
+    if(c.statut==='Annulée'){ map[disc].nbAnnulees += 1; return; }
+    map[disc].jours += Number(c.jours)||1;
+    map[disc].nbCourses += 1;
+    const ps = participantsList(c);
+    if(ps.length>1) map[disc].coGuidage += 1;
+    ps.forEach(p=>{
+      const amt = participantAmount(c,p);
+      map[disc].ca += amt;
+      if(p.paye) map[disc].encaisse += amt;
+      if(p.dateFacturee && p.datePaye){
+        const delta = (new Date(p.datePaye)-new Date(p.dateFacturee))/86400000;
+        if(delta>=0) map[disc].delais.push(delta);
+      }
+    });
+  });
+  return map;
+}
+function renderStatistiques(){
+  const year = currentYear;
+  const disc = computeDisciplineStats(year);
+  const discNames = Object.keys(disc).sort((a,b)=>disc[b].ca-disc[a].ca);
+
+  // ---- Taux de remplissage ----
+  const yearAll = courses.filter(c=>c.dateDebut && new Date(c.dateDebut).getFullYear()===year);
+  const joursVendus = yearAll.filter(c=>c.statut==='Confirmée'||c.statut==='À facturer').reduce((s,c)=>s+(Number(c.jours)||1),0);
+  const jourDispo = settings.jourDisponibles || 180;
+  const tauxRemplissage = jourDispo>0 ? Math.min(100, joursVendus/jourDispo*100) : 0;
+  document.getElementById('statsFillCard').innerHTML = `
+    <div style="text-align:center; margin-bottom:10px;">
+      <div style="font-size:28px; font-weight:700; color:var(--navy);">${tauxRemplissage.toFixed(0)}%</div>
+      <div class="helper" style="text-align:center;">${joursVendus} jours vendus sur ${jourDispo} jours disponibles (${year})</div>
+    </div>
+    <div style="background:var(--grey-line); border-radius:6px; height:10px; overflow:hidden;">
+      <div style="background:var(--gold); height:100%; width:${tauxRemplissage.toFixed(0)}%;"></div>
+    </div>
+  `;
+
+  // ---- Par discipline ----
+  const discBox = document.getElementById('statsDisciplineList');
+  if(discNames.length===0){
+    discBox.innerHTML = emptyState('📊', `Aucune course en ${year} pour établir des statistiques.`);
+  } else {
+    discBox.innerHTML = discNames.map(name=>{
+      const d = disc[name];
+      const tarifMoyen = d.jours>0 ? d.ca/d.jours : 0;
+      const aEncaisser = d.ca - d.encaisse;
+      const tauxAnnulDisc = d.nbTotal>0 ? (d.nbAnnulees/d.nbTotal*100) : 0;
+      const delaiMoyen = d.delais.length ? (d.delais.reduce((s,x)=>s+x,0)/d.delais.length) : null;
+      const coGuidagePct = d.nbCourses>0 ? (d.coGuidage/d.nbCourses*100) : 0;
+      return `<div class="card">
+        <div style="font-weight:700; font-size:15px; color:var(--navy); margin-bottom:6px;">${escapeHTML(name)}</div>
+        <div style="display:flex; justify-content:space-between; padding:2px 0;"><span>Jours</span><strong>${d.jours} j</strong></div>
+        <div style="display:flex; justify-content:space-between; padding:2px 0;"><span>Chiffre d'affaires</span><strong>${fmtCHF(d.ca)}</strong></div>
+        <div style="display:flex; justify-content:space-between; padding:2px 0;"><span>Tarif journalier moyen</span><strong>${fmtCHF(tarifMoyen)}</strong></div>
+        <div style="display:flex; justify-content:space-between; padding:2px 0; color:var(--green);"><span>Encaissé</span><span>${fmtCHF(d.encaisse)}</span></div>
+        <div style="display:flex; justify-content:space-between; padding:2px 0; color:var(--gold);"><span>À encaisser</span><span>${fmtCHF(aEncaisser)}</span></div>
+        <div style="display:flex; justify-content:space-between; padding:2px 0; color:var(--grey); border-top:1px solid var(--grey-line); margin-top:4px; padding-top:6px;"><span>Taux d'annulation</span><span>${tauxAnnulDisc.toFixed(0)}%</span></div>
+        <div style="display:flex; justify-content:space-between; padding:2px 0; color:var(--grey);"><span>Co-guidage</span><span>${coGuidagePct.toFixed(0)}% des courses</span></div>
+        ${delaiMoyen!==null ? `<div style="display:flex; justify-content:space-between; padding:2px 0; color:var(--grey);"><span>Délai moyen facturé → payé</span><span>${delaiMoyen.toFixed(0)} j</span></div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  // ---- Comparaison année précédente ----
+  const prevYear = year - 1;
+  const prevDisc = computeDisciplineStats(prevYear);
+  const totalThis = discNames.reduce((s,n)=>s+disc[n].ca,0);
+  const joursThis = discNames.reduce((s,n)=>s+disc[n].jours,0);
+  const prevNames = Object.keys(prevDisc);
+  const totalPrev = prevNames.reduce((s,n)=>s+prevDisc[n].ca,0);
+  const joursPrev = prevNames.reduce((s,n)=>s+prevDisc[n].jours,0);
+  const evolCA = totalPrev>0 ? ((totalThis-totalPrev)/totalPrev*100) : null;
+  const evolJours = joursPrev>0 ? ((joursThis-joursPrev)/joursPrev*100) : null;
+  document.getElementById('statsYoyCard').innerHTML = `
+    <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>CA ${prevYear}</span><span>${fmtCHF(totalPrev)}</span></div>
+    <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>CA ${year}</span><strong>${fmtCHF(totalThis)}</strong></div>
+    <div style="display:flex; justify-content:space-between; padding:4px 0; color:${evolCA===null?'var(--grey)':(evolCA>=0?'var(--green)':'var(--red)')};"><span>Évolution</span><span>${evolCA===null?'—':(evolCA>=0?'+':'')+evolCA.toFixed(0)+'%'}</span></div>
+    <div style="display:flex; justify-content:space-between; padding:4px 0; border-top:1px solid var(--grey-line); margin-top:6px; padding-top:8px;"><span>Jours ${prevYear}</span><span>${joursPrev} j</span></div>
+    <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Jours ${year}</span><strong>${joursThis} j</strong></div>
+    <div style="display:flex; justify-content:space-between; padding:4px 0; color:${evolJours===null?'var(--grey)':(evolJours>=0?'var(--green)':'var(--red)')};"><span>Évolution</span><span>${evolJours===null?'—':(evolJours>=0?'+':'')+evolJours.toFixed(0)+'%'}</span></div>
+  `;
+
+  // ---- Clients : récurrence + top 5 ----
+  const clientCa = {}; // clientId -> ca cette année
+  const clientCourseCount = {};
+  yearAll.filter(c=>isLiveStatut(c.statut)).forEach(c=>{
+    participantsList(c).forEach(p=>{
+      clientCa[p.clientId] = (clientCa[p.clientId]||0) + participantAmount(c,p);
+      clientCourseCount[p.clientId] = (clientCourseCount[p.clientId]||0) + 1;
+    });
+  });
+  const uniqueClientIds = Object.keys(clientCourseCount);
+  const recurrents = uniqueClientIds.filter(id=>clientCourseCount[id]>=2);
+  const tauxRecurrence = uniqueClientIds.length>0 ? (recurrents.length/uniqueClientIds.length*100) : 0;
+  const topClients = uniqueClientIds
+    .sort((a,b)=>clientCa[b]-clientCa[a])
+    .slice(0,5)
+    .map(id=>{
+      const cl = clients.find(x=>x.id===id);
+      return `<div style="display:flex; justify-content:space-between; padding:3px 0;"><span>${cl?escapeHTML(clientName(cl)):'Client supprimé'}</span><strong>${fmtCHF(clientCa[id])}</strong></div>`;
+    }).join('');
+  document.getElementById('statsClientsCard').innerHTML = `
+    <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Clients uniques (${year})</span><strong>${uniqueClientIds.length}</strong></div>
+    <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Taux de clients récurrents</span><strong>${tauxRecurrence.toFixed(0)}%</strong></div>
+    ${topClients ? `<div style="border-top:1px solid var(--grey-line); margin-top:8px; padding-top:8px;"><div class="helper" style="margin-bottom:4px;">Top clients (CA)</div>${topClients}</div>` : ''}
+  `;
+
+  // ---- Trésorerie : créances en cours (toutes années, snapshot actuel) ----
+  let creances = 0;
+  courses.forEach(c=>{
+    participantsList(c).forEach(p=>{
+      if(p.factureId && !p.paye) creances += participantAmount(c,p);
+    });
+  });
+  document.getElementById('statsTresorerieCard').innerHTML = `
+    <div style="display:flex; justify-content:space-between; padding:4px 0;"><span>Créances en cours (facturé, non payé)</span><strong>${fmtCHF(creances)}</strong></div>
+    <div class="helper" style="margin-top:6px;">Total actuel, toutes années confondues — ce qu'il vous reste à encaisser.</div>
+  `;
+}
+
 /* ============================= CAISSE ============================= */
 /* Livre de caisse : combine automatiquement les courses payées en espèces
    (entrées) et les dépenses payées en espèces (sorties) avec les mouvements
@@ -1455,10 +1973,14 @@ function generateSwissQRDataUrl(payload){
    cash physique. */
 function getCaisseLedger(){
   const entries = [];
-  courses.filter(c=>c.statut==='Payée' && c.modePaiement==='Cash').forEach(c=>{
-    entries.push({
-      date: c.dateDebut, desc: 'Course — '+(c.lieu||c.activite||'Sans titre'),
-      entree: Number(c.totalFacture)||0, sortie: 0, auto: true, kind:'course',
+  courses.forEach(c=>{
+    participantsList(c).filter(p=>p.paye && p.modePaiement==='Cash').forEach(p=>{
+      const cl = clients.find(x=>x.id===p.clientId);
+      entries.push({
+        date: p.datePaye || c.dateDebut,
+        desc: 'Course — '+(c.lieu||c.activite||'Sans titre')+(cl?' ('+clientName(cl)+')':''),
+        entree: participantAmount(c,p), sortie: 0, auto: true, kind:'course',
+      });
     });
   });
   depenses.filter(d=>d.modePaiement==='Cash').forEach(d=>{
