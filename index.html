@@ -1385,6 +1385,11 @@ return {matrix:matrix,utf8Bytes:utf8Bytes};})();
   }
   .sheet-overlay.active .sheet{transform:translateY(0);}
   .sheet-handle{width:36px; height:4px; background:var(--grey-line); border-radius:3px; margin:0 auto 14px;}
+  .sheet-top{position:sticky; top:-18px; margin:-18px -18px 8px; padding:10px 18px 0; height:52px; border-bottom:1px solid var(--grey-line); background:var(--cream); z-index:2; touch-action:none;}
+  .sheet-top .sheet-handle{width:44px; height:5px; background:#C9C3B6; margin:0 auto;}
+  .sheet-close{position:absolute; right:12px; top:9px; width:36px; height:36px; border-radius:50%; border:none;
+    background:var(--grey-line); color:var(--navy); font-size:18px; line-height:36px; padding:0; cursor:pointer;}
+  .sheet-close:active{background:#D6D0C4;}
   .sheet h3{margin:0 0 16px; font-size:18px; color:var(--navy);}
 
   label{display:block; font-size:12.5px; font-weight:700; color:var(--grey); margin:12px 0 5px;}
@@ -1792,13 +1797,41 @@ function showToast(msg){
 
 function closeSheet(){
   document.getElementById('sheetOverlay').classList.remove('active');
-  document.getElementById('sheetContent').innerHTML = '';
+  const sheet = document.getElementById('sheetContent');
+  sheet.innerHTML = '';
+  sheet.style.transform = '';
 }
 function openSheetHTML(html){
-  document.getElementById('sheetContent').innerHTML =
-    '<div class="sheet-handle"></div>' + html;
+  const sheet = document.getElementById('sheetContent');
+  sheet.innerHTML =
+    '<div class="sheet-top"><div class="sheet-handle"></div><button type="button" class="sheet-close" aria-label="Fermer" onclick="closeSheet()">✕</button></div>' + html;
+  sheet.scrollTop = 0;
+  sheet.style.transform = '';
   document.getElementById('sheetOverlay').classList.add('active');
 }
+/* Glisser vers le bas (depuis le haut de la fenêtre) pour la fermer, comme sur iPhone. */
+(function(){
+  let startY = null, dy = 0, sheet = null;
+  document.addEventListener('touchstart', e=>{
+    sheet = document.getElementById('sheetContent');
+    if(!sheet || !document.getElementById('sheetOverlay').classList.contains('active')) return;
+    const fromTop = e.target.closest && e.target.closest('.sheet-top');
+    if(fromTop || (sheet.contains(e.target) && sheet.scrollTop<=0 && !e.target.closest('input,textarea,select'))){
+      startY = e.touches[0].clientY; dy = 0;
+    }
+  }, {passive:true});
+  document.addEventListener('touchmove', e=>{
+    if(startY===null || !sheet) return;
+    dy = e.touches[0].clientY - startY;
+    if(dy>0 && sheet.scrollTop<=0){ sheet.style.transition='none'; sheet.style.transform='translateY('+dy+'px)'; }
+  }, {passive:true});
+  document.addEventListener('touchend', ()=>{
+    if(startY===null || !sheet) return;
+    sheet.style.transition=''; 
+    if(dy>110) closeSheet(); else sheet.style.transform='';
+    startY = null; dy = 0;
+  });
+})();
 
 function fmtCHF(n){
   n = Number(n)||0;
